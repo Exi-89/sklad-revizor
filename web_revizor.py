@@ -4,15 +4,15 @@ import re
 import pandas as pd
 import os
 
-# Nastavení stránky
-st.set_page_config(page_title="SKLAD ZZN 2026", page_icon="⚡", layout="wide")
+# Nastavení stránky - ODSTRANĚNA IKONA VLEVO
+st.set_page_config(page_title="SKLAD ZZN 2026", layout="wide")
 
-# DESIGN - Čistý styl s logem jako odkazem
+# DESIGN - Čistý tmavý styl
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
     
-    /* Kontejner pro logo, aby bylo klikací a vycentrované */
+    /* Kontejner pro hlavní klikací logo */
     .logo-link-container {
         display: flex;
         justify-content: center;
@@ -20,7 +20,7 @@ st.markdown("""
         transition: transform 0.3s;
     }
     .logo-link-container:hover {
-        transform: scale(1.02); /* Jemné zvětšení při najetí myší */
+        transform: scale(1.02);
     }
 
     .stCheckbox {
@@ -36,31 +36,28 @@ st.markdown("""
         border: 1px solid #f85149 !important;
     }
     
-    /* Skrytí standardního paddingu Streamlitu nahoře */
     .block-container {
         padding-top: 1rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# HLAVIČKA S LOGEM JAKO ODKAZEM
-# Pokud logo existuje, vytvoříme z něj klikací odkaz na web ZZN
+# HLAVNÍ LOGO JAKO ODKAZ NA WEB ZZN
 if os.path.exists("logo_zzn.png"):
+    # Cesta k obrázku na tvém GitHubu pro zobrazení v HTML odkazu
+    repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
     st.markdown(
         f"""
         <div class="logo-link-container">
             <a href="https://www.zznhp.cz" target="_blank">
-                <img src="data:image/png;base64,{st.image("logo_zzn.png", width=500)}" style="display:none;">
-                <img src="https://raw.githubusercontent.com/{st.session_state.get('user_repo', 'Exi-89/sklad-revizor')}/main/logo_zzn.png" width="500">
+                <img src="{repo_url}" width="500">
             </a>
         </div>
         """, 
         unsafe_allow_html=True
     )
-    # Poznámka: Pokud by se logo nenačetlo přes GitHub link výše, použijeme standardní st.image bez odkazu:
-    # st.image("logo_zzn.png", width=500)
 else:
-    st.title("⚡ SKLAD ZZN")
+    st.title("ZZN HOSPODÁŘSKÉ POTŘEBY")
 
 # --- LOGIKA DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
@@ -94,7 +91,7 @@ def uloz_data(nove_polozky):
 if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
-# --- FUNKČNÍ ČÁST ---
+# --- FUNKČNÍ SEKCE ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import z webu ZZN", "📝 Ruční zápis"])
 
 with t1:
