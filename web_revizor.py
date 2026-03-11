@@ -33,7 +33,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("⚡ SKLAD REVIZOR PRO")
+st.title("⚡ SKLAD")
 
 # --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
@@ -79,7 +79,7 @@ with st.expander("➕ PŘIDAT NOVÉ PDF DO SEZNAMU"):
 l, r = st.columns([1, 1])
 
 with l:
-    st.subheader("📦 REGÁLY (Zaškrtni co dochází)")
+    st.subheader("📦 POLOŽKA (Zaškrtni co dochází)")
     for i, pol in enumerate(st.session_state.db):
         # Unikátní klíč pro každý checkbox
         if st.checkbox(pol, key=f"c_{i}_{pol[:5]}"):
@@ -136,3 +136,4 @@ if st.sidebar.button("⚠️ Smazat databázi a vrátit Demo"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.session_state.db = nacti_data()
     st.rerun()
+
