@@ -8,32 +8,33 @@ import streamlit.components.v1 as components
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD ZZN 2026", layout="wide")
 
-# --- DESIGN A EFEKTY ---
+# --- DESIGN A INTERAKTIVNÍ EFEKTY ---
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
     
-    /* Efekt pro logo */
-    .logo-container {
-        display: flex;
-        justify-content: center;
-        padding: 20px 0px;
-    }
+    /* Logo s efektem zvětšení */
+    .logo-container { display: flex; justify-content: center; padding: 25px 0px; }
     .logo-img {
-        width: 450px; /* Větší základní velikost */
+        width: 500px; 
         transition: transform 0.3s ease, filter 0.3s ease;
         cursor: pointer;
     }
-    .logo-img:hover {
-        transform: scale(1.05); /* Zvětšení o 5% */
-        filter: brightness(1.2); /* Mírné rozsvícení */
-    }
+    .logo-img:hover { transform: scale(1.08); filter: brightness(1.2); }
     
+    /* Barevné záložky (Tabs) */
+    button[data-baseweb="tab"] { font-weight: bold !important; }
+    #tabs-b3-tab-0 { color: #f85149 !important; } /* PDF - Červená */
+    #tabs-b3-tab-1 { color: #58a6ff !important; } /* Import - Modrá */
+    #tabs-b3-tab-2 { color: #adbac7 !important; } /* Ruční - Šedá */
+
     .row-container {
         display: flex; align-items: center; border-radius: 8px;
         margin-bottom: 6px; background: #1c2128; border: 1px solid #30363d; overflow: hidden;
     }
     .color-strip { width: 12px; align-self: stretch; }
+    
+    /* Barvy kategorií v regálech */
     .cat-blue { background-color: #0072FF; }
     .cat-yellow { background-color: #FFD700; }
     .cat-green { background-color: #28a745; }
@@ -41,35 +42,24 @@ st.markdown("""
     .cat-orange { background-color: #ff9f43; }
     .cat-default { background-color: #444c56; }
 
-    /* Decentní tlačítka */
+    /* Stylování tlačítek */
     div.stButton > button {
         background-color: #30363d !important; color: #adbac7 !important;
         border: 1px solid #444c56 !important; border-radius: 8px !important;
     }
-    div.stButton > button:hover {
-        border-color: #58a6ff !important; color: #58a6ff !important;
-    }
+    div.stButton > button:hover { border-color: #58a6ff !important; color: #58a6ff !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# LOGO S EFEKTEM
-# Použijeme buď lokální soubor nebo URL z tvého GitHubu
-logo_path = "logo_zzn.png"
+# LOGO
 repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
-
-st.markdown(f"""
-    <div class="logo-container">
-        <a href="https://www.zznhp.cz" target="_blank">
-            <img src="{repo_url}" class="logo-img">
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown(f'<div class="logo-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" class="logo-img"></a></div>', unsafe_allow_html=True)
 
 # --- LOGIKA DAT ---
 DB_FILE = "sklad_databaze.csv"
 
-if 'vybrane_polozky' not in st.session_state:
-    st.session_state.vybrane_polozky = []
+if 'vybrane_polozky' not in st.session_state: st.session_state.vybrane_polozky = []
+if 'list_key' not in st.session_state: st.session_state.list_key = 0
 
 def nacti_data():
     if os.path.exists(DB_FILE):
@@ -102,29 +92,27 @@ def skenovat():
     """, height=350)
 
 # --- OVLÁDÁNÍ ---
-col_scan, _ = st.columns([1, 1])
-with col_scan:
-    if st.button("📸 SPUSTIT SKENER"): skenovat()
+if st.button("📸 SPUSTIT SKENER"): skenovat()
 
-search_query = st.selectbox("🔍 Hledat / Našeptávač:", [""] + st.session_state.db, index=0).lower()
+search_query = st.selectbox("🔍 Hledat v regálech / Našeptávač:", [""] + st.session_state.db, index=0).lower()
 
-# --- ZÁLOŽKY ---
+# --- BAREVNÉ ZÁLOŽKY ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
-    if st.button("Uložit PDF"):
+    if st.button("Uložit z PDF", key="btn_pdf"):
         if up:
             reader = pypdf.PdfReader(up)
             z_pdf = [r.strip() for p in reader.pages for r in p.extract_text().split('\n') if len(r) > 5]
             uloz_data(z_pdf); st.rerun()
 with t2:
-    web = st.text_area("Vložit text z webu...")
-    if st.button("Importovat text"):
+    web = st.text_area("Vložit text z webu...", key="area_web")
+    if st.button("Importovat text", key="btn_web"):
         if web: uloz_data([r.strip() for r in web.split('\n') if len(r) > 3]); st.rerun()
 with t3:
     c1, c2 = st.columns(2)
     k, n = c1.text_input("Kód"), c2.text_input("Název")
-    if st.button("Přidat do regálů"):
+    if st.button("Přidat zboží", key="btn_manual"):
         if k and n: uloz_data([f"{k} {n}"]); st.rerun()
 
 # --- VÝPIS ---
@@ -153,6 +141,7 @@ with l:
                 cista = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', p).strip()
                 if cista not in st.session_state.vybrane_polozky:
                     st.session_state.vybrane_polozky.append(cista)
+                    st.session_state.list_key += 1 # Změna klíče pro vynucení refreshu
             st.markdown('</div>', unsafe_allow_html=True)
         with c_del:
             if st.button("🗑️", key=f"db_del_{i}"):
@@ -162,16 +151,14 @@ with l:
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    smazat_idx = -1
-    for idx, pol in enumerate(st.session_state.vybrane_polozky):
+    # Logika mazání se zvýšenou stabilitou
+    for idx, pol in enumerate(list(st.session_state.vybrane_polozky)):
         col_txt, col_btn = st.columns([0.85, 0.15])
         col_txt.write(f"• {pol}")
-        if col_btn.button("❌", key=f"list_del_{idx}"):
-            smazat_idx = idx
-    
-    if smazat_idx != -1:
-        st.session_state.vybrane_polozky.pop(smazat_idx)
-        st.rerun()
+        if col_btn.button("❌", key=f"del_{st.session_state.list_key}_{idx}"):
+            st.session_state.vybrane_polozky.remove(pol)
+            st.session_state.list_key += 1
+            st.rerun()
 
     if st.session_state.vybrane_polozky:
         st.divider()
