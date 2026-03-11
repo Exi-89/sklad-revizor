@@ -2,81 +2,78 @@ import streamlit as st
 import pypdf
 import re
 
-# Nastavení stránky pro mobilní telefony
-st.set_page_config(
-    page_title="Skladový Revizor", 
-    page_icon="📦",
-    layout="centered"
-)
+# Nastavení stránky
+st.set_page_config(page_title="SKLAD | Kritické zásoby", page_icon="⚠️")
 
-# Styl pro zvětšení textu u checkboxů (aby se lépe klikalo prstem ve skladu)
+# VLASTNÍ DESIGN - Červené zvýraznění pro to, co dochází
 st.markdown("""
     <style>
-    .stCheckbox {
-        font-size: 20px;
-        padding: 10px 0px;
-    }
+    .stCheckbox { background-color: white; padding: 10px; border-radius: 5px; border: 1px solid #ddd; }
+    .critical-item { color: #d32f2f; font-weight: bold; background-color: #ffebee; padding: 10px; border-radius: 5px; border-left: 5px solid #d32f2f; margin-bottom: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📦 Skladový Kontrolor")
-st.write("Profesionální nástroj pro revizi převodek.")
+st.title("⚠️ Skladový Revizor - Kritické zásoby")
+
+# Inicializace paměti pro "červený seznam"
+if 'critical_list' not in st.session_state:
+    st.session_state.critical_list = []
 
 # Nahrání souboru
-uploaded_file = st.file_uploader("Vyber PDF převodku (např. Zepo)", type="pdf")
+uploaded_file = st.file_uploader("📂 Nahrajte PDF převodku", type="pdf")
+
+def filter_zepo_data(text):
+    radky = []
+    for radek in text.split('\n'):
+        if re.search(r'\d+,\d+\s*(ks|m)', radek):
+            cisty = radek.strip().split("stav na skladě")[0]
+            radky.append(cisty)
+    return radky
 
 if uploaded_file is not None:
-    try:
-        reader = pypdf.PdfReader(uploaded_file)
-        radky_zbozi = []
+    reader = pypdf.PdfReader(uploaded_file)
+    vsechno_zbozi = []
+    for page in reader.pages:
+        vsechno_zbozi.extend(filter_zepo_data(page.extract_text()))
 
-        for page in reader.pages:
-            text = page.extract_text()
-            if not text:
-                continue
-                
-            for radek in text.split('\n'):
-                # FILTR: Hledáme řádky obsahující množství v jednotkách 'ks' nebo 'm'
-                # Formát: číslo,číslo následované ks/m
-                if re.search(r'\d+,\d+\s*(ks|m)', radek):
-                    # Vyčistíme řádek od balastu (jako "stav na skladě")
-                    cisty_radek = radek.strip().split("stav na skladě")[0]
-                    radky_zbozi.append(cisty_radek)
-
-        if radky_zbozi:
-            st.subheader(f"Nalezeno {len(radky_zbozi)} položek k ověření:")
+    if vsechno_zbozi:
+        st.subheader("Položky k revizi (odškrtni, co dochází):")
+        
+        for i, polozka in enumerate(vsechno_zbozi):
+            col1, col2 = st.columns([0.8, 0.2])
+            with col1:
+                # Checkbox pro označení, že zboží dochází
+                is_critical = st.checkbox(f"{polozka}", key=f"crit_{i}")
             
-            # Vytvoření interaktivního seznamu
-            for i, polozka in enumerate(radky_zbozi):
-                st.checkbox(f"{polozka}", key=f"item_{i}")
-                st.divider() # Čára pro lepší přehlednost na mobilu
+            if is_critical:
+                if polozka not in st.session_state.critical_list:
+                    st.session_state.critical_list.append(polozka)
+            else:
+                if polozka in st.session_state.critical_list:
+                    st.session_state.critical_list.remove(polozka)
 
-            if st.button("KONTROLA DOKONČENA", use_container_width=True):
-                st.success("Všechno zboží bylo zkontrolováno!")
-                st.balloons()
+        st.markdown("---")
+        
+        # --- SEKCE PRO ODESLÁNÍ ---
+        if st.session_state.critical_list:
+            st.error("🚨 SEZNAM CHYBĚJÍCÍHO ZBOŽÍ:")
+            finalni_text = "\n".join(st.session_state.critical_list)
+            st.text_area("Seznam k odeslání (zkopíruj si):", value=finalni_text, height=150)
+            
+            # Tlačítko pro vyčištění
+            if st.button("🗑️ Vymazat seznam"):
+                st.session_state.critical_list = []
+                st.rerun()
         else:
-            st.warning("V nahraném PDF jsem nenašel žádné zboží. Zkontrolujte formát.")
-
-    except Exception as e:
-        st.error(f"Chyba při čtení PDF: {e}")
+            st.success("Zatím jsi neoznačil nic jako chybějící.")
 
 else:
-    # --- DEMO DATA PRO TESTOVÁNÍ BEZ PDF ---
-    st.divider()
-    st.info("💡 Nyní běží DEMO režim. Nahrajte PDF pro skutečnou kontrolu.")
+    st.info("Nahraj PDF nebo si to zkus na demo datech níže.")
+    demo = ["50011210 Hrábě 6,000 ks", "36030009 Šňůra 200,000 m", "51060060 Podkladek 20,000 ks"]
+    for i, p in enumerate(demo):
+        if st.checkbox(p, key=f"demo_{i}"):
+            if p not in st.session_state.critical_list:
+                st.session_state.critical_list.append(p)
     
-    demo_zbozi = [
-        "50011210 Hrábě švédské drát. pevné - 6,000 ks",
-        "50210086 Hrábě provzduš. oboustranné - 4,000 ks",
-        "49050470 Kolík sázecí kovový Profi - 5,000 ks",
-        "36030009 Šňůra PP 4mm barevná - 200,000 m",
-        "50100425 Drtič kostí pákový 50cm - 1,000 ks",
-        "51060060 Podkladek nelakovaný - 20,000 ks"
-    ]
-    
-    for i, polozka in enumerate(demo_zbozi):
-        st.checkbox(f"{polozka}", key=f"demo_{i}")
-        st.divider()
-
-    if st.button("TESTOVACÍ ULOŽENÍ", use_container_width=True):
-        st.balloons()
+    if st.session_state.critical_list:
+        st.text_area("Seznam k odeslání (Demo):", value="\n".join(st.session_state.critical_list))
