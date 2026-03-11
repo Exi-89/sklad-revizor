@@ -33,7 +33,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("⚡ SKLAD REVIZOR PRO")
+st.title("⚡ SKLAD")
 
 DB_FILE = "sklad_databaze.csv"
 
@@ -84,7 +84,7 @@ l, r = st.columns([1, 1])
 vybrane_polozky = []
 
 with l:
-    st.subheader("📦 REGÁLY")
+    st.subheader("📦 POLOŽKY")
     # Každý checkbox má unikátní klíč, který se při resetu změní
     for i, pol in enumerate(st.session_state.db):
         cista = ocisti_pro_objednavku(pol)
@@ -121,3 +121,4 @@ if st.sidebar.button("⚠️ Resetovat celou databázi"):
     st.session_state.db = nacti_data()
     st.session_state.reset_key += 1
     st.rerun()
+
