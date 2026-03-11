@@ -5,20 +5,27 @@ import pandas as pd
 import os
 
 # Nastavení stránky
-st.set_page_config(page_title="SKLAD ZEPA 2026", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="SKLAD ZZN 2026", page_icon="⚡", layout="wide")
 
 # --- LOGO A DESIGN ---
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
-    .logo-container { display: flex; justify-content: center; padding: 10px; }
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        padding: 20px;
+        background-color: #ffffff; /* Bílé pozadí pro logo ZZN */
+        border-radius: 15px;
+        margin-bottom: 20px;
+    }
     h1 {
         background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-size: 2.2rem !important;
         text-align: center;
-        margin-top: 0px;
+        margin-top: 10px;
     }
     .stCheckbox {
         background: #161b22;
@@ -34,11 +41,16 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# Vložení loga ZZN (pokud by externí odkaz nešel, kód zobrazí název)
 st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-st.image("https://www.zznhp.cz/templates/zepa/images/logo.png", width=250)
+try:
+    # Oficiální cesta k logu z webu zzn
+    st.image("https://www.zznhp.cz/templates/zepa/images/logo.png", width=300)
+except:
+    st.markdown("<h2 style='color: #000;'>ZZN Hospodářské potřeby</h2>", unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-st.title("⚡ SKLAD REVIZOR PRO")
+st.title("⚡ SKLAD REVIZOR ZZN PRO")
 
 # --- DATABÁZOVÉ FUNKCE ---
 DB_FILE = "sklad_databaze.csv"
@@ -73,53 +85,50 @@ if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
 # --- PANEL PRO PŘIDÁVÁNÍ DAT ---
-t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import z webu", "📝 Ruční zápis"])
+t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import z webu ZZN", "📝 Ruční zápis"])
 
 with t1:
-    up = st.file_uploader("Nahraj PDF", type="pdf")
+    up = st.file_uploader("Nahraj PDF převodku", type="pdf")
     if up:
         reader = pypdf.PdfReader(up)
         z_pdf = [r.strip().split("stav na skladě")[0] for p in reader.pages for r in p.extract_text().split('\n') if re.search(r'\d+,\d+\s*(ks|m)', r)]
         if z_pdf:
             st.session_state.db = uloz_data(z_pdf)
-            st.success("PDF nahráno!")
+            st.success("Převodka nahrána do skladu ZZN!")
             st.rerun()
 
 with t2:
-    st.info("Na webu Zepa označ zboží (kód a název), zkopíruj ho a vlož sem.")
-    web_paste = st.text_area("Vlož text z webu sem...", height=150)
-    if st.button("Importovat z webu"):
+    st.info("Na webu ZZN označ zboží, zkopíruj ho a vlož sem. Aplikace sama vytáhne kódy.")
+    web_paste = st.text_area("Vlož text z webu...", height=150)
+    if st.button("Importovat položky"):
         if web_paste:
-            # Hledáme vzory typu "8 čísel" následovaných textem
             nalezeno = []
-            radky = web_paste.split('\n')
-            for radek in radky:
+            for radek in web_paste.split('\n'):
                 kod = vytahni_kod(radek)
                 if kod:
-                    # Vyčistíme název od přebytečných mezer
                     nazev = radek.replace(kod, "").strip()
-                    if nazev:
-                        nalezeno.append(f"{kod} {nazev}")
+                    if nazev: nalezeno.append(f"{kod} {nazev}")
             if nalezeno:
                 st.session_state.db = uloz_data(nalezeno)
-                st.success(f"Nalezeno a přidáno {len(nalezeno)} položek!")
+                st.success(f"Přidáno {len(nalezeno)} položek z webu!")
                 st.rerun()
 
 with t3:
-    m_kod = st.text_input("Kód (8 čísel)")
-    m_nazev = st.text_input("Název")
-    if st.button("Uložit ručně"):
+    m_kod = st.text_input("Kód zboží (8 čísel)")
+    m_nazev = st.text_input("Název zboží")
+    if st.button("Uložit do databáze"):
         if m_kod and m_nazev:
             st.session_state.db = uloz_data([f"{m_kod} {m_nazev}"])
+            st.success("Položka uložena!")
             st.rerun()
 
 # --- HLAVNÍ PLOCHA ---
-search_query = st.text_input("🔍 Vyhledat v regálech...", "").lower()
+search_query = st.text_input("🔍 Hledat v regálech ZZN (kód/název)...", "").lower()
 l, r = st.columns([1, 1])
 vybrane = []
 
 with l:
-    st.subheader("📦 REGÁLY")
+    st.subheader("📦 REGÁLY SIBL")
     filtered_db = [p for p in st.session_state.db if search_query in p.lower()]
     for i, pol in enumerate(filtered_db):
         cista = ocisti_pro_objednavku(pol)
@@ -127,15 +136,15 @@ with l:
             vybrane.append(cista)
 
 with r:
-    st.subheader("📝 K OBJEDNÁNÍ")
+    st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
     if vybrane:
-        st.text_area("Seznam:", value="\n".join(vybrane), height=300)
+        st.text_area("Objednávka:", value="\n".join(vybrane), height=300)
         vysledek_js = "\\n".join(vybrane)
         st.components.v1.html(f"""
-            <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
+            <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT PRO ZZN</button>
             <script>
             document.getElementById('copyBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Seznam zkopírován!'));
             }});
             </script>
         """, height=70)
@@ -143,9 +152,9 @@ with r:
             st.session_state.reset_key += 1
             st.rerun()
     else:
-        st.info("Zatím žádný výběr.")
+        st.info("Vyberte položky z regálů vlevo.")
 
-if st.sidebar.button("⚠️ Reset databáze"):
+if st.sidebar.button("⚠️ Smazat databázi ZZN"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.session_state.db = nacti_data()
     st.session_state.reset_key += 1
