@@ -8,34 +8,28 @@ import streamlit.components.v1 as components
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD ZZN 2026", layout="wide")
 
-# --- DESIGN A DYNAMICKÉ BARVY ---
+# --- DESIGN ---
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
     .logo-link-container { display: flex; justify-content: center; padding: 15px 0px; }
     
-    /* Karty položek v regálech */
-    .stCheckbox { 
-        border-radius: 10px; 
-        padding: 10px; 
-        margin-bottom: 5px; 
-        border-left: 12px solid #30363d;
-        background: #161b22;
-    }
+    /* Barevné kategorie */
+    .stCheckbox { border-radius: 10px; padding: 10px; margin-bottom: 5px; background: #161b22; border: 1px solid #30363d; }
     
-    /* Barvy kategorií */
-    div[data-testid="stMarkdownContainer"]:contains("Hadice") { border-left-color: #0072FF !important; }
-    div[data-testid="stMarkdownContainer"]:contains("Hrábě") { border-left-color: #FFD700 !important; }
-    div[data-testid="stMarkdownContainer"]:contains("Postřik") { border-left-color: #28a745 !important; }
-    div[data-testid="stMarkdownContainer"]:contains("Pletivo") { border-left-color: #f85149 !important; }
-    div[data-testid="stMarkdownContainer"]:contains("Nářadí") { border-left-color: #ff9f43 !important; }
-
+    /* Barvy podle textu */
+    div[data-testid="stMarkdownContainer"]:contains("Hadice") { border-left: 10px solid #0072FF !important; }
+    div[data-testid="stMarkdownContainer"]:contains("Hrábě") { border-left: 10px solid #FFD700 !important; }
+    div[data-testid="stMarkdownContainer"]:contains("Postřik") { border-left: 10px solid #28a745 !important; }
+    
     /* Velké skenovací tlačítko */
-    .stButton>button {
+    div.stButton > button:first-child {
+        background-color: #f85149;
+        color: white;
+        height: 3em;
         width: 100%;
-        height: 60px;
-        font-size: 20px !important;
-        font-weight: bold !important;
+        font-weight: bold;
+        border-radius: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -43,99 +37,98 @@ st.markdown("""
 # LOGO
 if os.path.exists("logo_zzn.png"):
     repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
-    st.markdown(f'<div class="logo-link-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" width="400"></a></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="logo-link-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" width="350"></a></div>', unsafe_allow_html=True)
 
-# --- LOGIKA DATABÁZE ---
+# --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
 
 def nacti_data():
-    if os.path.exists(DB_FILE): 
-        try: return pd.read_csv(DB_FILE)['polozka'].tolist()
-        except: return []
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE)['polozka'].tolist()
     return ["50011210 Hrábě švédské drát.pevné", "35020060 Hadice 1 m"]
-
-def vytahni_kod(text):
-    match = re.search(r'(\d{8,13})', text)
-    return match.group(1) if match else None
 
 def uloz_data(nove_polozky):
     aktualni = nacti_data()
-    existujici_kody = {vytahni_kod(p) for p in aktualni if vytahni_kod(p)}
-    finalni = list(aktualni)
-    for n in nove_polozky:
-        kod_novy = vytahni_kod(n)
-        if kod_novy and kod_novy not in existujici_kody:
-            finalni.append(n)
+    # Jednoduché očištění a sloučení
+    finalni = list(set(aktualni + nove_polozky))
     pd.DataFrame({'polozka': sorted(finalni)}).to_csv(DB_FILE, index=False)
-    return sorted(finalni)
+    st.session_state.db = sorted(finalni)
 
 if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
+if 'search_val' not in st.session_state: st.session_state.search_val = ""
 
-# --- DIALOG SE ČTEČKOU (Šetří baterii) ---
-@st.dialog("📸 SKENOVÁNÍ EAN-13")
-def skenovat_ean():
-    st.write("Namiřte foťák na čárový kód...")
-    components.html(
-        """
+# --- SKENER DIALOG ---
+@st.dialog("📸 SKENOVAT EAN-13")
+def skenovat():
+    st.write("Namiřte na čárový kód")
+    components.html("""
         <script src="https://unpkg.com/html5-qrcode"></script>
-        <div id="reader" style="width:100%; border-radius:10px; overflow:hidden;"></div>
+        <div id="reader" style="width:100%;"></div>
         <script>
             const html5QrCode = new Html5Qrcode("reader");
-            const config = { fps: 20, qrbox: { width: 280, height: 150 } };
-            
-            html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
-                // Poslat kód do vyhledávání
-                window.parent.document.querySelector('input[aria-label="🔍 Vyhledat nebo výsledek skenu:"]').value = decodedText;
-                // Simulovat Enter pro vyhledání
-                const ke = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13 });
-                window.parent.document.querySelector('input[aria-label="🔍 Vyhledat nebo výsledek skenu:"]').dispatchEvent(ke);
-                
-                // Zastavit foťák a zavřít okno (přes streamlit mechanismus)
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => {
+                window.parent.postMessage({type: 'streamlit:setComponentValue', value: txt}, '*');
                 html5QrCode.stop();
             });
         </script>
-        """,
-        height=350,
-    )
+    """, height=300)
 
-# --- HLAVNÍ OVLÁDÁNÍ ---
-col_scan, col_empty = st.columns([1, 1])
-with col_scan:
-    if st.button("📸 SKENOVAT EAN-13"):
-        skenovat_ean()
+# --- HLAVNÍ PANELE ---
+col_s, col_e = st.columns([1, 2])
+with col_s:
+    if st.button("📸 SPUSTIT SKENER"):
+        skenovat()
 
-search_query = st.text_input("🔍 Vyhledat nebo výsledek skenu:", value="").lower()
+search_query = st.text_input("🔍 Hledat v regálech (kód/název)...", value=st.session_state.search_val).lower()
 
-# --- ZÁLOŽKY ---
-t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
-# ... (logika záložek zůstává stejná)
+# --- ZÁLOŽKY (OPRAVENO) ---
+tab1, tab2, tab3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 
-# --- REGÁLY ---
-l, r = st.columns([1, 1])
-vybrane = []
+with tab1:
+    soubor = st.file_uploader("Nahraj PDF", type="pdf")
+    if soubor:
+        reader = pypdf.PdfReader(soubor)
+        texty = [r.strip() for p in reader.pages for r in p.extract_text().split('\n') if len(r) > 5]
+        if st.button("Uložit data z PDF"):
+            uloz_data(texty)
+            st.success("Uloženo!")
+            st.rerun()
+
+with tab2:
+    vlozeny_text = st.text_area("Vlož text z webu...")
+    if st.button("Importovat z webu"):
+        if vlozeny_text:
+            radky = [r.strip() for r in vlozeny_text.split('\n') if len(r) > 3]
+            uloz_data(radky)
+            st.rerun()
+
+with tab3:
+    c1, c2 = st.columns(2)
+    k = c1.text_input("Kód")
+    n = c2.text_input("Název")
+    if st.button("Přidat ručně"):
+        if k and n:
+            uloz_data([f"{k} {n}"])
+            st.rerun()
+
+# --- VÝPIS ---
+st.divider()
+l, r = st.columns(2)
 
 with l:
-    st.subheader("📦 REGÁLY SIBL")
-    filtered_db = [p for p in st.session_state.db if search_query in p.lower()]
-    for i, pol in enumerate(filtered_db):
-        cista = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', pol).strip()
-        if st.checkbox(pol, key=f"cb_{st.session_state.reset_key}_{i}"):
-            vybrane.append(cista)
+    st.subheader("📦 REGÁLY")
+    vyfiltrovano = [p for p in st.session_state.db if search_query in p.lower()]
+    vybrane = []
+    for i, p in enumerate(vyfiltrovano):
+        if st.checkbox(p, key=f"p_{st.session_state.reset_key}_{i}"):
+            vybrane.append(p)
 
 with r:
-    st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
+    st.subheader("📝 SEZNAM")
     if vybrane:
-        st.text_area("Seznam:", value="\n".join(vybrane), height=300)
-        vysledek_js = "\\n".join(vybrane)
-        st.components.v1.html(f"""
-            <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT PRO ZZN</button>
-            <script>
-            document.getElementById('copyBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
-            }});
-            </script>
-        """, height=70)
-        if st.button("🗑️ VYMAZAT VÝBĚR"):
+        vysledek = "\n".join(vybrane)
+        st.text_area("K odeslání:", value=vysledek, height=200)
+        if st.button("🗑️ VYMAZAT"):
             st.session_state.reset_key += 1
             st.rerun()
