@@ -48,16 +48,18 @@ def vytahni_kod(text):
 
 def nacti_data():
     if os.path.exists(DB_FILE): 
-        return pd.read_csv(DB_FILE)['polozka'].tolist()
+        try:
+            return pd.read_csv(DB_FILE)['polozka'].tolist()
+        except:
+            return []
     return ["50011210 Hrábě švédské drát.pevné", "36030009 Šňůra PP 4mm barevná"]
 
 def uloz_data(nove_polozky):
     aktualni = nacti_data()
-    # Kontrola duplicity podle prvních 8 číslic (kódu)
     existujici_kody = {vytahni_kod(p) for p in aktualni}
     finalni = list(aktualni)
     
-    for n v nove_polozky:
+    for n in nove_polozky: # TADY BYLA TA CHYBA - opraveno na 'in'
         kod_novy = vytahni_kod(n)
         if kod_novy not in existujici_kody:
             finalni.append(n)
@@ -90,8 +92,8 @@ with col_pdf:
 
 with col_manual:
     with st.expander("📝 PŘIDAT RUČNĚ"):
-        m_kod = st.text_input("Kód (8 čísel)")
-        m_nazev = st.text_input("Název zboží")
+        m_kod = st.text_input("Kód (8 čísel)", key="manual_kod")
+        m_nazev = st.text_input("Název zboží", key="manual_nazev")
         if st.button("Uložit do regálu"):
             if m_kod and m_nazev:
                 nova = f"{m_kod} {m_nazev}"
@@ -108,7 +110,6 @@ vybrane = []
 
 with l:
     st.subheader("📦 REGÁLY")
-    # Filtrování databáze podle hledání
     filtered_db = [p for p in st.session_state.db if search_query in p.lower()]
     
     for i, pol in enumerate(filtered_db):
@@ -120,9 +121,8 @@ with r:
     st.subheader("📝 K OBJEDNÁNÍ")
     if vybrane:
         vysledek_text = "\n".join(vybrane)
-        st.text_area("", value=vysledek_text, height=300)
+        st.text_area("Seznam:", value=vysledek_text, height=300)
         
-        # Kopírování
         vysledek_js = "\\n".join(vybrane)
         st.components.v1.html(f"""
             <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:20px; border:none; border-radius:15px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
