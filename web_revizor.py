@@ -16,13 +16,11 @@ st.markdown("""
     .logo-img { width: 520px; transition: transform 0.4s ease; cursor: pointer; }
     .logo-img:hover { transform: scale(1.1); filter: brightness(1.2); }
     
-    /* Barevné záložky */
     button[data-baseweb="tab"] { font-weight: bold !important; font-size: 18px !important; }
     #tabs-b3-tab-0 { color: #ff4b4b !important; }
     #tabs-b3-tab-1 { color: #0072FF !important; }
     #tabs-b3-tab-2 { color: #adbac7 !important; }
 
-    /* Styl řádků v regálu */
     div.stButton > button.row-btn {
         text-align: left !important;
         justify-content: flex-start !important;
@@ -32,10 +30,6 @@ st.markdown("""
         padding: 10px !important;
         display: block !important;
         width: 100% !important;
-    }
-    div.stButton > button.row-btn:hover {
-        border-color: #58a6ff !important;
-        background-color: #262c36 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -57,16 +51,34 @@ if 'db' not in st.session_state:
 def vycisti_a_uloz(text_list):
     nove_vycistene = []
     for radek in text_list:
-        # Hledá 8místný kód a pak text (název), ignoruje ceny a jednotky na konci
-        match = re.search(r'(\d{8})\s+([^\d,]+)', radek)
-        if match:
-            kod, nazev = match.groups()
-            nove_vycistene.append(f"{kod} {nazev.strip()}")
-        elif len(radek) > 10: # Pokud kód nemá, ale je to dlouhý text, vezme aspoň kus
-            nove_vycistene.append(radek.strip()[:60])
+        radek = radek.strip()
+        # Hledá 8místný kód na začátku nebo po mezeře
+        kod_match = re.search(r'(\d{8})', radek)
+        if kod_match:
+            kod = kod_match.group(1)
+            # Vezme vše za kódem
+            cast_za_kodem = radek.split(kod)[-1].strip()
+            
+            # AGRESIVNÍ ŘEZ: Zastaví se u ceny, měny nebo velkého množství mezer
+            # Najde první výskyt ceny (např. 120,00 nebo 120.00) nebo značky Kč
+            stop_body = [m.start() for m in re.finditer(r'(\d+[\s,.]+\d+|Kč|ks|bal|m\d| skladem| ks)', cast_za_kodem)]
+            
+            if stop_body:
+                nazev = cast_za_kodem[:min(stop_body)].strip()
+            else:
+                nazev = cast_za_kodem.strip()
+            
+            # Odstraní přebytečné znaky na konci (čárky, pomlčky)
+            nazev = re.sub(r'[:;,\-\s]+$', '', nazev)
+            
+            if len(nazev) > 1:
+                nove_vycistene.append(f"{kod} {nazev}")
     
-    st.session_state.db = sorted(list(set(st.session_state.db + nove_vycistene)))
-    pd.DataFrame({'polozka': st.session_state.db}).to_csv(DB_FILE, index=False)
+    if nove_vycistene:
+        st.session_state.db = sorted(list(set(st.session_state.db + nove_vycistene)))
+        pd.DataFrame({'polozka': st.session_state.db}).to_csv(DB_FILE, index=False)
+        return True
+    return False
 
 # --- SKENER DIALOG ---
 @st.dialog("📸 SKENOVÁNÍ")
@@ -94,48 +106,40 @@ with col_b:
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
-    if st.button("Uložit PDF"):
+    if st.button("Uložit z PDF"):
         if up:
             lines = [r.strip() for p in pypdf.PdfReader(up).pages for r in p.extract_text().split('\n')]
-            vycisti_a_uloz(lines); st.rerun()
+            if vycisti_a_uloz(lines): st.rerun()
 with t2:
-    web = st.text_area("Vložit text (např. z B2B košíku)...")
-    if st.button("Importovat a vyčistit"):
+    web = st.text_area("Vlož text z webu...", placeholder="Zkopíruj sem obsah košíku nebo ceníku...")
+    if st.button("Importovat jen Kód + Název"):
         if web:
-            vycisti_a_uloz(web.split('\n')); st.rerun()
+            if vycisti_a_uloz(web.split('\n')): st.success("Hotovo! Vyčištěno."); st.rerun()
+            else: st.warning("Nepodařilo se najít žádné zboží s 8místným kódem.")
 with t3:
     c1, c2 = st.columns(2)
     k, n = c1.text_input("Kód"), c2.text_input("Název")
     if st.button("Přidat ručně"):
-        if k and n: vycisti_a_uloz([f"{k} {n}"]); st.rerun()
+        if k and n: 
+            st.session_state.db.append(f"{k} {n}")
+            uloz_db = sorted(list(set(st.session_state.db)))
+            pd.DataFrame({'polozka': uloz_db}).to_csv(DB_FILE, index=False)
+            st.rerun()
 
 st.divider()
 
-# --- BARVY ---
-def get_color(text):
-    text = text.lower()
-    if any(x in text for x in ["hadice", "voda"]): return "cat-blue"
-    if any(x in text for x in ["hrábě", "lopat"]): return "cat-yellow"
-    if any(x in text for x in ["hnojiv", "postřik"]): return "cat-green"
-    if any(x in text for x in ["pletivo", "drát"]): return "cat-red"
-    if any(x in text for x in ["nářadí", "kladiv"]): return "cat-orange"
-    return "cat-default"
-
+# --- VÝPIS ---
 l, r = st.columns(2)
 
 with l:
     st.subheader("📦 REGÁLY")
     filtr = [p for p in st.session_state.db if search in p.lower()]
-    
     for p in filtr:
-        color = get_color(p)
         is_sel = p in st.session_state.vybrane
-        
         row_col, del_col = st.columns([0.88, 0.12])
         with row_col:
             icon = "✅" if is_sel else "⬜"
-            # Používáme unikátní styl pro tlačítko řádku
-            if st.button(f"{icon} {p}", key=f"r_{p}", use_container_width=True, help="Klikni pro výběr"):
+            if st.button(f"{icon} {p}", key=f"r_{p}", use_container_width=True):
                 if is_sel: st.session_state.vybrane.remove(p)
                 else: st.session_state.vybrane.add(p)
                 st.rerun()
@@ -162,7 +166,7 @@ with r:
             <button id="cBtn" style="width:100%; background:#1f6feb; color:white; padding:15px; border:none; border-radius:10px; font-weight:bold; cursor:pointer; font-size:16px;">📋 KOPÍROVAT SEZNAM</button>
             <script>
             document.getElementById('cBtn').onclick = () => {{
-                navigator.clipboard.writeText(`{copy_text}`).then(() => alert('Seznam je ve schránce!'));
+                navigator.clipboard.writeText(`{copy_text}`).then(() => alert('Zkopírováno jen kód a název!'));
             }};
             </script>
         """, height=70)
