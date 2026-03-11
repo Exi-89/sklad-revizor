@@ -8,47 +8,30 @@ import streamlit.components.v1 as components
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD ZZN 2026", layout="wide")
 
-# --- DESIGN A INTERAKTIVNÍ EFEKTY ---
+# --- DESIGN ---
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
-    
-    /* Větší interaktivní logo */
     .logo-container { display: flex; justify-content: center; padding: 25px 0px; }
-    .logo-img {
-        width: 520px; 
-        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        cursor: pointer;
-    }
+    .logo-img { width: 520px; transition: transform 0.4s ease; cursor: pointer; }
     .logo-img:hover { transform: scale(1.1); filter: brightness(1.2); }
     
-    /* Barevné záložky */
     button[data-baseweb="tab"] { font-weight: bold !important; font-size: 18px !important; }
-    #tabs-b3-tab-0 { color: #ff4b4b !important; } /* PDF */
-    #tabs-b3-tab-1 { color: #0072FF !important; } /* Import */
-    #tabs-b3-tab-2 { color: #adbac7 !important; } /* Ruční */
+    #tabs-b3-tab-0 { color: #ff4b4b !important; }
+    #tabs-b3-tab-1 { color: #0072FF !important; }
+    #tabs-b3-tab-2 { color: #adbac7 !important; }
 
     .row-container {
         display: flex; align-items: center; border-radius: 8px;
         margin-bottom: 6px; background: #1c2128; border: 1px solid #30363d; overflow: hidden;
     }
     .color-strip { width: 14px; align-self: stretch; }
-    
-    /* Barvy kategorií */
     .cat-blue { background-color: #0072FF; }
     .cat-yellow { background-color: #FFD700; }
     .cat-green { background-color: #28a745; }
     .cat-red { background-color: #f85149; }
     .cat-orange { background-color: #ff9f43; }
     .cat-default { background-color: #444c56; }
-
-    /* Stylování tlačítek */
-    div.stButton > button {
-        background-color: #30363d !important; color: #adbac7 !important;
-        border: 1px solid #444c56 !important; border-radius: 8px !important;
-        transition: 0.2s;
-    }
-    div.stButton > button:hover { border-color: #58a6ff !important; color: #58a6ff !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -56,49 +39,23 @@ st.markdown("""
 repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
 st.markdown(f'<div class="logo-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" class="logo-img"></a></div>', unsafe_allow_html=True)
 
-# --- LOGIKA DAT ---
+# --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
 
-# Inicializace stavů
 if 'vybrane_polozky' not in st.session_state: st.session_state.vybrane_polozky = []
-if 'list_id' not in st.session_state: st.session_state.list_id = 0
-
-def nacti_data():
+if 'db' not in st.session_state:
     if os.path.exists(DB_FILE):
-        try: return pd.read_csv(DB_FILE)['polozka'].tolist()
-        except: return []
-    return ["50011210 Hrábě švédské drát.pevné", "35020060 Hadice 1 m"]
+        try: st.session_state.db = pd.read_csv(DB_FILE)['polozka'].tolist()
+        except: st.session_state.db = ["50011210 Hrábě švédské", "35020060 Hadice 1 m"]
+    else: st.session_state.db = ["50011210 Hrábě švédské", "35020060 Hadice 1 m"]
 
-def uloz_data(nove_polozky):
-    aktualni = nacti_data()
-    finalni = list(set(aktualni + nove_polozky))
-    pd.DataFrame({'polozka': sorted(finalni)}).to_csv(DB_FILE, index=False)
-    st.session_state.db = sorted(finalni)
+def uloz_data(nove):
+    st.session_state.db = sorted(list(set(st.session_state.db + nove)))
+    pd.DataFrame({'polozka': st.session_state.db}).to_csv(DB_FILE, index=False)
 
-if 'db' not in st.session_state: st.session_state.db = nacti_data()
-if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
+# --- OVLÁDÁNÍ ---
+search_query = st.selectbox("🔍 Hledat v regálech:", [""] + st.session_state.db, index=0).lower()
 
-# --- SKENER ---
-@st.dialog("📸 SKENOVÁNÍ")
-def skenovat():
-    components.html("""
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <div id="reader" style="width:100%; border-radius:10px; overflow:hidden;"></div>
-        <script>
-            const html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: 250 }, (txt) => {
-                window.parent.postMessage({type: 'barcode_scanned', value: txt}, '*');
-                html5QrCode.stop();
-            });
-        </script>
-    """, height=350)
-
-# --- HLAVNÍ OVLÁDÁNÍ ---
-if st.button("📸 SPUSTIT SKENER"): skenovat()
-
-search_query = st.selectbox("🔍 Našeptávač (hledej v regálech):", [""] + st.session_state.db, index=0).lower()
-
-# --- ZÁLOŽKY ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
@@ -108,8 +65,8 @@ with t1:
             z_pdf = [r.strip() for p in reader.pages for r in p.extract_text().split('\n') if len(r) > 5]
             uloz_data(z_pdf); st.rerun()
 with t2:
-    web = st.text_area("Vložit text z webu...")
-    if st.button("Importovat text"):
+    web = st.text_area("Vložit text...")
+    if st.button("Importovat"):
         if web: uloz_data([r.strip() for r in web.split('\n') if len(r) > 3]); st.rerun()
 with t3:
     c1, c2 = st.columns(2)
@@ -117,7 +74,6 @@ with t3:
     if st.button("Přidat zboží"):
         if k and n: uloz_data([f"{k} {n}"]); st.rerun()
 
-# --- VÝPIS ---
 st.divider()
 
 def urcit_barvu(text):
@@ -139,30 +95,29 @@ with l:
         c_line, c_del = st.columns([0.85, 0.15])
         with c_line:
             st.markdown(f'<div class="row-container"><div class="color-strip {barva}"></div>', unsafe_allow_html=True)
-            if st.checkbox(p, key=f"regal_{st.session_state.reset_key}_{i}"):
-                cista = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', p).strip()
-                if cista not in st.session_state.vybrane_polozky:
-                    st.session_state.vybrane_polozky.append(cista)
-                    st.session_state.list_id += 1 # Refresh pro seznam
+            # KLÍČOVÁ ZMĚNA: Checkbox je svázán se stavem v vybrane_polozky
+            je_vybrano = p in st.session_state.vybrane_polozky
+            if st.checkbox(p, value=je_vybrano, key=f"reg_{p}"):
+                if p not in st.session_state.vybrane_polozky:
+                    st.session_state.vybrane_polozky.append(p)
+                    st.rerun()
+            elif je_vybrano:
+                st.session_state.vybrane_polozky.remove(p)
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
         with c_del:
-            if st.button("🗑️", key=f"db_del_{i}"):
+            if st.button("🗑️", key=f"db_del_{p}"):
                 st.session_state.db.remove(p)
                 pd.DataFrame({'polozka': sorted(st.session_state.db)}).to_csv(DB_FILE, index=False)
                 st.rerun()
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    
-    # NOVÁ STABILNÍ LOGIKA MAZÁNÍ
-    temp_seznam = list(st.session_state.vybrane_polozky)
-    for idx, pol in enumerate(temp_seznam):
+    for idx, pol in enumerate(st.session_state.vybrane_polozky):
         col_txt, col_btn = st.columns([0.88, 0.12])
         col_txt.write(f"• {pol}")
-        # Klíč obsahuje 'list_id', takže se při smazání všechna tlačítka přegenerují
-        if col_btn.button("❌", key=f"del_{st.session_state.list_id}_{idx}"):
+        if col_btn.button("❌", key=f"list_del_{pol}"):
             st.session_state.vybrane_polozky.remove(pol)
-            st.session_state.list_id += 1 # Tohle je klíč k opravě posouvání
             st.rerun()
 
     if st.session_state.vybrane_polozky:
@@ -172,13 +127,11 @@ with r:
             <button id="cpBtn" style="width:100%; background:linear-gradient(90deg, #1f6feb, #58a6ff); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
             <script>
             document.getElementById('cpBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno do schránky!'));
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
             }});
             </script>
         """, height=70)
         
         if st.button("🗑️ VYMAZAT VŠE"):
             st.session_state.vybrane_polozky = []
-            st.session_state.reset_key += 1
-            st.session_state.list_id += 1
             st.rerun()
