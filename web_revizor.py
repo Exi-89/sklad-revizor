@@ -25,7 +25,7 @@ st.markdown("""
     }
     .color-strip { width: 15px; align-self: stretch; }
     
-    /* Definice barev */
+    /* Barvy kategorií */
     .cat-blue { background-color: #0072FF; }
     .cat-yellow { background-color: #FFD700; }
     .cat-green { background-color: #28a745; }
@@ -33,7 +33,8 @@ st.markdown("""
     .cat-orange { background-color: #ff9f43; }
     .cat-default { background-color: #30363d; }
 
-    div.stButton > button:first-child {
+    /* Skenovací tlačítko */
+    div.stButton > button.scan-btn {
         background: linear-gradient(90deg, #f85149, #d73a49);
         color: white; height: 3.5em; width: 100%; font-weight: bold; border-radius: 12px; border: none;
     }
@@ -52,10 +53,6 @@ def nacti_data():
     if os.path.exists(DB_FILE):
         return pd.read_csv(DB_FILE)['polozka'].tolist()
     return ["50011210 Hrábě švédské drát.pevné", "35020060 Hadice 1 m"]
-
-def vytahni_kod(text):
-    match = re.search(r'(\d{8,13})', text)
-    return match.group(1) if match else ""
 
 def uloz_data(nove_polozky):
     aktualni = nacti_data()
@@ -76,24 +73,21 @@ def skenovat():
         <script>
             const html5QrCode = new Html5Qrcode("reader");
             html5QrCode.start({ facingMode: "environment" }, { fps: 20, qrbox: {width: 250, height: 150} }, (txt) => {
-                window.parent.document.querySelector('input[aria-label*="Hledat"]').value = txt;
-                const ke = new KeyboardEvent('keydown', { bubbles: true, keyCode: 13 });
-                window.parent.document.querySelector('input[aria-label*="Hledat"]').dispatchEvent(ke);
+                window.parent.postMessage({type: 'barcode_scanned', value: txt}, '*');
                 html5QrCode.stop();
             });
         </script>
     """, height=350)
 
-# --- OVLÁDÁNÍ ---
-col_btn, _ = st.columns([1, 1])
-with col_btn:
-    if st.button("📸 SKENOVAT ČÁROVÝ KÓD"):
-        skenovat()
+# --- HLAVNÍ OVLÁDÁNÍ ---
+if st.button("📸 SKENOVAT ČÁROVÝ KÓD", css_class="scan-btn"):
+    skenovat()
 
-search_query = st.text_input("🔍 Hledat v regálech (kód/název)...", value="").lower()
+# NASEPTAVAC VE VYHLEDAVANI
+search_query = st.selectbox("🔍 Hledat nebo vybrat z databáze:", [""] + st.session_state.db, index=0).lower()
 
-# --- ZÁLOŽKY ---
-t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Našeptávač / Ruční"])
+# --- ZÁLOŽKY PRO IMPORT ---
+t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční přidání"])
 
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
@@ -112,35 +106,32 @@ with t2:
             st.rerun()
 
 with t3:
-    st.subheader("BOD 3: Našeptávač")
-    volba = st.selectbox("Vyber zboží:", [""] + sorted(st.session_state.db))
     c1, c2 = st.columns(2)
-    with c1:
-        novy_kod = st.text_input("Kód", value=vytahni_kod(volba) if volba else "")
-    with c2:
-        novy_nazev = st.text_input("Název", value=volba.replace(vytahni_kod(volba), "").strip() if volba else "")
-    if st.button("➕ Přidat do regálu"):
-        if novy_kod and novy_nazev:
-            uloz_data([f"{novy_kod} {novy_nazev}"])
+    k = c1.text_input("Kód")
+    n = c2.text_input("Název")
+    if st.button("Přidat do databáze"):
+        if k and n:
+            uloz_data([f"{k} {n}"])
             st.rerun()
 
-# --- VÝPIS S BARVAMI ---
+# --- VÝPIS A KOPÍROVÁNÍ ---
 st.divider()
 
 def urcit_barvu(text):
     text = text.lower()
-    if any(x in text for x in ["hadice", "voda", "postřikovač"]): return "cat-blue"
-    if any(x in text for x in ["hrábě", "lopat", "násada"]): return "cat-yellow"
-    if any(x in text for x in ["hnojiv", "substrát", "postřik"]): return "cat-green"
-    if any(x in text for x in ["pletivo", "drát", "hřebík"]): return "cat-red"
-    if any(x in text for x in ["nářadí", "kladiv", "kleště"]): return "cat-orange"
+    if any(x in text for x in ["hadice", "voda"]): return "cat-blue"
+    if any(x in text for x in ["hrábě", "lopat"]): return "cat-yellow"
+    if any(x in text for x in ["hnojiv", "postřik"]): return "cat-green"
+    if any(x in text for x in ["pletivo", "drát"]): return "cat-red"
+    if any(x in text for x in ["nářadí", "kladiv"]): return "cat-orange"
     return "cat-default"
 
 l, r = st.columns(2)
+vybrane = []
+
 with l:
     st.subheader("📦 REGÁLY")
     vyfiltrovano = [p for p in st.session_state.db if search_query in p.lower()]
-    vybrane = []
     for i, p in enumerate(vyfiltrovano):
         barva = urcit_barvu(p)
         st.markdown(f'<div class="row-container"><div class="color-strip {barva}"></div>', unsafe_allow_html=True)
@@ -149,9 +140,22 @@ with l:
         st.markdown('</div>', unsafe_allow_html=True)
 
 with r:
-    st.subheader("📝 SEZNAM")
+    st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
     if vybrane:
-        st.text_area("K odeslání:", value="\n".join(vybrane), height=300)
+        vysledek_text = "\n".join(vybrane)
+        st.text_area("Seznam:", value=vysledek_text, height=250)
+        
+        # TLAČÍTKO PRO KOPÍROVÁNÍ
+        vysledek_js = "\\n".join(vybrane)
+        st.components.v1.html(f"""
+            <button id="cpBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT PRO ZZN</button>
+            <script>
+            document.getElementById('cpBtn').addEventListener('click', function() {{
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno do schránky!'));
+            }});
+            </script>
+        """, height=70)
+        
         if st.button("🗑️ VYMAZAT VÝBĚR"):
             st.session_state.reset_key += 1
             st.rerun()
