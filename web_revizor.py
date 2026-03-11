@@ -7,17 +7,15 @@ import os
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD ZZN 2026", page_icon="⚡", layout="wide")
 
-# --- LOGO A DESIGN ---
+# DESIGN
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
     .logo-container {
         display: flex;
         justify-content: center;
-        padding: 20px;
-        background-color: #ffffff; /* Bílé pozadí pro logo ZZN */
-        border-radius: 15px;
-        margin-bottom: 20px;
+        padding: 10px;
+        margin-bottom: 10px;
     }
     h1 {
         background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
@@ -25,7 +23,7 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         font-size: 2.2rem !important;
         text-align: center;
-        margin-top: 10px;
+        margin-top: 0px;
     }
     .stCheckbox {
         background: #161b22;
@@ -41,18 +39,18 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Vložení loga ZZN (pokud by externí odkaz nešel, kód zobrazí název)
+# LOGO - Zkusíme lokální soubor, pokud ho nahraješ na GitHub jako 'logo_zzn.png'
 st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-try:
-    # Oficiální cesta k logu z webu zzn
-    st.image("https://www.zznhp.cz/templates/zepa/images/logo.png", width=300)
-except:
-    st.markdown("<h2 style='color: #000;'>ZZN Hospodářské potřeby</h2>", unsafe_allow_html=True)
+if os.path.exists("logo_zzn.png"):
+    st.image("logo_zzn.png", width=300)
+else:
+    # Záložní text, dokud nenahraješ obrázek
+    st.markdown("<h2 style='text-align: center; color: white;'>ZZN HOSPODÁŘSKÉ POTŘEBY</h2>", unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.title("⚡ SKLAD REVIZOR ZZN PRO")
 
-# --- DATABÁZOVÉ FUNKCE ---
+# --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
 
 def ocisti_pro_objednavku(text):
@@ -84,23 +82,21 @@ def uloz_data(nove_polozky):
 if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
-# --- PANEL PRO PŘIDÁVÁNÍ DAT ---
+# --- IMPORTY ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import z webu ZZN", "📝 Ruční zápis"])
 
 with t1:
-    up = st.file_uploader("Nahraj PDF převodku", type="pdf")
+    up = st.file_uploader("Nahraj PDF", type="pdf")
     if up:
         reader = pypdf.PdfReader(up)
         z_pdf = [r.strip().split("stav na skladě")[0] for p in reader.pages for r in p.extract_text().split('\n') if re.search(r'\d+,\d+\s*(ks|m)', r)]
         if z_pdf:
             st.session_state.db = uloz_data(z_pdf)
-            st.success("Převodka nahrána do skladu ZZN!")
             st.rerun()
 
 with t2:
-    st.info("Na webu ZZN označ zboží, zkopíruj ho a vlož sem. Aplikace sama vytáhne kódy.")
-    web_paste = st.text_area("Vlož text z webu...", height=150)
-    if st.button("Importovat položky"):
+    web_paste = st.text_area("Vlož text z webu ZZN...", height=150)
+    if st.button("Importovat"):
         if web_paste:
             nalezeno = []
             for radek in web_paste.split('\n'):
@@ -110,20 +106,18 @@ with t2:
                     if nazev: nalezeno.append(f"{kod} {nazev}")
             if nalezeno:
                 st.session_state.db = uloz_data(nalezeno)
-                st.success(f"Přidáno {len(nalezeno)} položek z webu!")
                 st.rerun()
 
 with t3:
-    m_kod = st.text_input("Kód zboží (8 čísel)")
-    m_nazev = st.text_input("Název zboží")
-    if st.button("Uložit do databáze"):
+    m_kod = st.text_input("Kód")
+    m_nazev = st.text_input("Název")
+    if st.button("Uložit"):
         if m_kod and m_nazev:
             st.session_state.db = uloz_data([f"{m_kod} {m_nazev}"])
-            st.success("Položka uložena!")
             st.rerun()
 
-# --- HLAVNÍ PLOCHA ---
-search_query = st.text_input("🔍 Hledat v regálech ZZN (kód/název)...", "").lower()
+search_query = st.text_input("🔍 Hledat v regálech ZZN...", "").lower()
+
 l, r = st.columns([1, 1])
 vybrane = []
 
@@ -138,13 +132,13 @@ with l:
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
     if vybrane:
-        st.text_area("Objednávka:", value="\n".join(vybrane), height=300)
+        st.text_area("Seznam:", value="\n".join(vybrane), height=300)
         vysledek_js = "\\n".join(vybrane)
         st.components.v1.html(f"""
             <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT PRO ZZN</button>
             <script>
             document.getElementById('copyBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Seznam zkopírován!'));
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
             }});
             </script>
         """, height=70)
@@ -152,10 +146,4 @@ with r:
             st.session_state.reset_key += 1
             st.rerun()
     else:
-        st.info("Vyberte položky z regálů vlevo.")
-
-if st.sidebar.button("⚠️ Smazat databázi ZZN"):
-    if os.path.exists(DB_FILE): os.remove(DB_FILE)
-    st.session_state.db = nacti_data()
-    st.session_state.reset_key += 1
-    st.rerun()
+        st.info("Vyberte položky vlevo.")
