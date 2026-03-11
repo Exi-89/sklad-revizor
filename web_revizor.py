@@ -33,10 +33,15 @@ st.markdown("""
     .cat-orange { background-color: #ff9f43; }
     .cat-default { background-color: #30363d; }
 
-    /* Skenovací tlačítko */
-    div.stButton > button.scan-btn {
-        background: linear-gradient(90deg, #f85149, #d73a49);
-        color: white; height: 3.5em; width: 100%; font-weight: bold; border-radius: 12px; border: none;
+    /* Stylování červeného tlačítka skeneru */
+    div.stButton > button:first-child {
+        background: linear-gradient(90deg, #f85149, #d73a49) !important;
+        color: white !important;
+        height: 3.5em;
+        width: 100%;
+        font-weight: bold !important;
+        border-radius: 12px !important;
+        border: none !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -51,7 +56,8 @@ DB_FILE = "sklad_databaze.csv"
 
 def nacti_data():
     if os.path.exists(DB_FILE):
-        return pd.read_csv(DB_FILE)['polozka'].tolist()
+        try: return pd.read_csv(DB_FILE)['polozka'].tolist()
+        except: return []
     return ["50011210 Hrábě švédské drát.pevné", "35020060 Hadice 1 m"]
 
 def uloz_data(nove_polozky):
@@ -80,13 +86,13 @@ def skenovat():
     """, height=350)
 
 # --- HLAVNÍ OVLÁDÁNÍ ---
-if st.button("📸 SKENOVAT ČÁROVÝ KÓD", css_class="scan-btn"):
+if st.button("📸 SKENOVAT ČÁROVÝ KÓD"):
     skenovat()
 
 # NASEPTAVAC VE VYHLEDAVANI
-search_query = st.selectbox("🔍 Hledat nebo vybrat z databáze:", [""] + st.session_state.db, index=0).lower()
+search_query = st.selectbox("🔍 Vyhledat nebo vybrat z databáze:", [""] + st.session_state.db, index=0).lower()
 
-# --- ZÁLOŽKY PRO IMPORT ---
+# --- ZÁLOŽKY ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční přidání"])
 
 with t1:
@@ -107,8 +113,8 @@ with t2:
 
 with t3:
     c1, c2 = st.columns(2)
-    k = c1.text_input("Kód")
-    n = c2.text_input("Název")
+    k = c1.text_input("Kód (ručně)")
+    n = c2.text_input("Název (ručně)")
     if st.button("Přidat do databáze"):
         if k and n:
             uloz_data([f"{k} {n}"])
