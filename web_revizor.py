@@ -40,9 +40,7 @@ DB_FILE = "sklad_databaze.csv"
 
 def ocisti_pro_objednavku(text):
     """Odstraní množství (ks, m) a svislíky, ponechá jen kód a název."""
-    # Odstraní vše od čárky s číslem (množství) až do konce řádku
     text = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', text)
-    # Odstraní svislíky
     text = text.replace('|', '').strip()
     return text
 
@@ -63,6 +61,7 @@ def uloz_data(nove):
     pd.DataFrame({'polozka': sjednoceno}).to_csv(DB_FILE, index=False)
     return sjednoceno
 
+# Inicializace stavů
 if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'kosik' not in st.session_state: st.session_state.kosik = []
 
@@ -78,7 +77,7 @@ with st.expander("➕ PŘIDAT NOVÉ PDF DO SEZNAMU"):
                     texty.append(r.strip().split("stav na skladě")[0])
         if texty:
             st.session_state.db = uloz_data(texty)
-            st.success(f"Nahráno {len(texty)} nových položek!")
+            st.success(f"Nahráno {len(texty)} položek!")
             st.rerun()
 
 # --- HLAVNÍ PLOCHA ---
@@ -87,15 +86,18 @@ l, r = st.columns([1, 1])
 with l:
     st.subheader("📦 REGÁLY (Zaškrtni co dochází)")
     for i, pol in enumerate(st.session_state.db):
-        if st.checkbox(pol, key=f"c_{i}_{pol[:5]}"):
-            # Do košíku uložíme už očištěný text
-            cista_polozka = ocisti_pro_objednavku(pol)
-            if cista_polozka not in st.session_state.kosik: 
-                st.session_state.kosik.append(cista_polozka)
+        # Přidali jsme 'value' parametr, který sleduje, zda je položka v košíku
+        cista = ocisti_pro_objednavku(pol)
+        is_checked = st.checkbox(pol, key=f"c_{i}_{pol[:5]}", value=(cista in st.session_state.kosik))
+        
+        if is_checked:
+            if cista not in st.session_state.kosik: 
+                st.session_state.kosik.append(cista)
+                st.rerun()
         else:
-            cista_polozka = ocisti_pro_objednavku(pol)
-            if cista_polozka in st.session_state.kosik: 
-                st.session_state.kosik.remove(cista_polozka)
+            if cista in st.session_state.kosik: 
+                st.session_state.kosik.remove(cista)
+                st.rerun()
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
@@ -124,7 +126,7 @@ with r:
             document.getElementById('copyBtn').addEventListener('click', function() {{
                 const textToCopy = `{vysledek_pro_js}`;
                 navigator.clipboard.writeText(textToCopy).then(() => {{
-                    alert('Zkopírováno bez kusů!');
+                    alert('Zkopírováno!');
                 }}).catch(err => {{
                     alert('Chyba při kopírování.');
                 }});
@@ -133,13 +135,15 @@ with r:
         """
         st.components.v1.html(html_button, height=100)
 
+        # OPRAVENÉ MAZÁNÍ - teď to opravdu všechno vyčistí
         if st.button("🗑️ VYMAZAT VÝBĚR"):
             st.session_state.kosik = []
             st.rerun()
     else:
         st.info("Seznam je prázdný.")
 
-if st.sidebar.button("⚠️ Resetovat databázi"):
+if st.sidebar.button("⚠️ Resetovat celou databázi"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.session_state.db = nacti_data()
+    st.session_state.kosik = []
     st.rerun()
