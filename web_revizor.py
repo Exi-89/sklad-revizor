@@ -8,15 +8,32 @@ import streamlit.components.v1 as components
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD ZZN 2026", layout="wide")
 
-# --- DESIGN ---
+# --- DESIGN A EFEKTY ---
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
+    
+    /* Efekt pro logo */
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        padding: 20px 0px;
+    }
+    .logo-img {
+        width: 450px; /* Větší základní velikost */
+        transition: transform 0.3s ease, filter 0.3s ease;
+        cursor: pointer;
+    }
+    .logo-img:hover {
+        transform: scale(1.05); /* Zvětšení o 5% */
+        filter: brightness(1.2); /* Mírné rozsvícení */
+    }
+    
     .row-container {
         display: flex; align-items: center; border-radius: 8px;
         margin-bottom: 6px; background: #1c2128; border: 1px solid #30363d; overflow: hidden;
     }
-    .color-strip { width: 10px; align-self: stretch; }
+    .color-strip { width: 12px; align-self: stretch; }
     .cat-blue { background-color: #0072FF; }
     .cat-yellow { background-color: #FFD700; }
     .cat-green { background-color: #28a745; }
@@ -24,7 +41,7 @@ st.markdown("""
     .cat-orange { background-color: #ff9f43; }
     .cat-default { background-color: #444c56; }
 
-    /* Stylování tlačítek */
+    /* Decentní tlačítka */
     div.stButton > button {
         background-color: #30363d !important; color: #adbac7 !important;
         border: 1px solid #444c56 !important; border-radius: 8px !important;
@@ -35,12 +52,20 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# LOGO
-if os.path.exists("logo_zzn.png"):
-    repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
-    st.markdown(f'<div style="display: flex; justify-content: center; padding: 10px;"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" width="300"></a></div>', unsafe_allow_html=True)
+# LOGO S EFEKTEM
+# Použijeme buď lokální soubor nebo URL z tvého GitHubu
+logo_path = "logo_zzn.png"
+repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
 
-# --- DATABÁZE ---
+st.markdown(f"""
+    <div class="logo-container">
+        <a href="https://www.zznhp.cz" target="_blank">
+            <img src="{repo_url}" class="logo-img">
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- LOGIKA DAT ---
 DB_FILE = "sklad_databaze.csv"
 
 if 'vybrane_polozky' not in st.session_state:
@@ -77,12 +102,14 @@ def skenovat():
     """, height=350)
 
 # --- OVLÁDÁNÍ ---
-if st.button("📸 SPUSTIT SKENER"): skenovat()
+col_scan, _ = st.columns([1, 1])
+with col_scan:
+    if st.button("📸 SPUSTIT SKENER"): skenovat()
 
 search_query = st.selectbox("🔍 Hledat / Našeptávač:", [""] + st.session_state.db, index=0).lower()
 
 # --- ZÁLOŽKY ---
-t1, t2, t3 = st.tabs(["📄 PDF", "🌐 Web", "📝 Ručně"])
+t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
     if st.button("Uložit PDF"):
@@ -91,13 +118,13 @@ with t1:
             z_pdf = [r.strip() for p in reader.pages for r in p.extract_text().split('\n') if len(r) > 5]
             uloz_data(z_pdf); st.rerun()
 with t2:
-    web = st.text_area("Vložit text...")
-    if st.button("Importovat"):
+    web = st.text_area("Vložit text z webu...")
+    if st.button("Importovat text"):
         if web: uloz_data([r.strip() for r in web.split('\n') if len(r) > 3]); st.rerun()
 with t3:
     c1, c2 = st.columns(2)
     k, n = c1.text_input("Kód"), c2.text_input("Název")
-    if st.button("Přidat"):
+    if st.button("Přidat do regálů"):
         if k and n: uloz_data([f"{k} {n}"]); st.rerun()
 
 # --- VÝPIS ---
@@ -135,18 +162,16 @@ with l:
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    # Logika mazání ze seznamu
-    nove_vybrane = []
+    smazat_idx = -1
     for idx, pol in enumerate(st.session_state.vybrane_polozky):
         col_txt, col_btn = st.columns([0.85, 0.15])
         col_txt.write(f"• {pol}")
-        # Tlačítko křížek - pokud na něj klikneš, položka se do 'nove_vybrane' nepřidá
-        if not col_btn.button("❌", key=f"list_del_{idx}"):
-            nove_vybrane.append(pol)
-        else:
-            # Pokud se na tlačítko kliklo, vynutíme překreslení bez této položky
-            st.session_state.vybrane_polozky = [p for i, p in enumerate(st.session_state.vybrane_polozky) if i != idx]
-            st.rerun()
+        if col_btn.button("❌", key=f"list_del_{idx}"):
+            smazat_idx = idx
+    
+    if smazat_idx != -1:
+        st.session_state.vybrane_polozky.pop(smazat_idx)
+        st.rerun()
 
     if st.session_state.vybrane_polozky:
         st.divider()
@@ -155,7 +180,7 @@ with r:
             <button id="cpBtn" style="width:100%; background:linear-gradient(90deg, #1f6feb, #58a6ff); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
             <script>
             document.getElementById('cpBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno do schránky!'));
             }});
             </script>
         """, height=70)
