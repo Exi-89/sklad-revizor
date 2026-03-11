@@ -3,53 +3,45 @@ import pypdf
 import re
 import pandas as pd
 import os
+import streamlit.components.v1 as components
 
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD ZZN 2026", layout="wide")
 
-# --- DESIGN S BAREVNÝMI KATEGORIEMI ---
+# --- DESIGN A DYNAMICKÉ BARVY ---
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
     .logo-link-container { display: flex; justify-content: center; padding: 15px 0px; }
     
-    /* Základní styl checkboxu */
-    .stCheckbox {
-        border-radius: 12px !important;
-        padding: 12px !important;
-        margin-bottom: 6px !important;
-        border: 1px solid #30363d;
+    /* Karty položek v regálech */
+    .stCheckbox { 
+        border-radius: 10px; 
+        padding: 10px; 
+        margin-bottom: 5px; 
+        border-left: 12px solid #30363d; /* Výchozí šedá */
+        background: #161b22;
+        transition: 0.2s;
     }
+    
+    /* Dynamické barvení podle klíčových slov v textu */
+    div[data-testid="stMarkdownContainer"]:contains("Hadice") { border-left-color: #0072FF !important; }
+    div[data-testid="stMarkdownContainer"]:contains("Hrábě") { border-left-color: #FFD700 !important; }
+    div[data-testid="stMarkdownContainer"]:contains("Postřik") { border-left-color: #28a745 !important; }
+    div[data-testid="stMarkdownContainer"]:contains("Pletivo") { border-left-color: #f85149 !important; }
+    div[data-testid="stMarkdownContainer"]:contains("Nářadí") { border-left-color: #ff9f43 !important; }
 
-    /* BAREVNÉ ROZLIŠENÍ PODLE KATEGORIÍ */
-    /* Modrá pro hadice a vodu */
-    div[data-testid="stMarkdownContainer"]:contains("Hadice"), 
-    div[data-testid="stMarkdownContainer"]:contains("voda") {
-        border-left: 8px solid #0072FF !important;
-    }
-    /* Žlutá pro nářadí a kov */
-    div[data-testid="stMarkdownContainer"]:contains("Hrábě"),
-    div[data-testid="stMarkdownContainer"]:contains("Nářadí") {
-        border-left: 8px solid #FFD700 !important;
-    }
-    /* Zelená pro zahradu a chemii */
-    div[data-testid="stMarkdownContainer"]:contains("Postřik"),
-    div[data-testid="stMarkdownContainer"]:contains("Hnojivo") {
-        border-left: 8px solid #28a745 !important;
-    }
-
-    /* Styl pro vybranou (zaškrtnutou) položku */
-    div[data-checked="true"] {
-        background: linear-gradient(145deg, #2e0505, #161b22) !important;
-        border: 1px solid #f85149 !important;
-    }
+    /* Zvýraznění vybraného řádku */
+    div[data-checked="true"] { background: #1f2937 !important; border-top: 1px solid #4facfe !important; }
+    
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; border: 2px solid #30363d; }
     </style>
     """, unsafe_allow_html=True)
 
-# HLAVNÍ LOGO (ODKAZ NA WEB)
+# LOGO S ODKAZEM
 if os.path.exists("logo_zzn.png"):
     repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
-    st.markdown(f'<div class="logo-link-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" width="450"></a></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="logo-link-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" width="400"></a></div>', unsafe_allow_html=True)
 
 # --- LOGIKA DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
@@ -61,7 +53,7 @@ def nacti_data():
     return ["50011210 Hrábě švédské drát.pevné", "35020060 Hadice 1 m"]
 
 def vytahni_kod(text):
-    match = re.search(r'(\d{8})', text)
+    match = re.search(r'(\d{8,13})', text) # Upraveno pro 8 až 13 čísel
     return match.group(1) if match else None
 
 def uloz_data(nove_polozky):
@@ -78,39 +70,57 @@ def uloz_data(nove_polozky):
 if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
-# --- FUNKČNÍ ZÁLOŽKY ---
-t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import z webu ZZN", "⚡ Sken / Ruční zápis"])
+# --- SPECIÁLNÍ EAN-13 ČTEČKA ---
+st.subheader("📸 Skenovat EAN-13")
 
-with t1:
-    up = st.file_uploader("Nahraj PDF", type="pdf")
-    if up:
-        reader = pypdf.PdfReader(up)
-        z_pdf = [r.strip().split("stav na skladě")[0] for p in reader.pages for r in p.extract_text().split('\n') if re.search(r'\d+,\d+\s*(ks|m)', r)]
-        if z_pdf:
-            st.session_state.db = uloz_data(z_pdf)
-            st.success("Data z PDF uložena!")
-            st.rerun()
+# Tento kousek kódu vytvoří v aplikaci okno s foťákem
+components.html(
+    """
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <div id="reader"></div>
+    <script>
+        function onScanSuccess(decodedText) {
+            // Předání kódu zpět do Streamlitu
+            window.parent.postMessage({type: 'barcode_result', value: decodedText}, '*');
+        }
+
+        const html5QrCode = new Html5Qrcode("reader");
+        const config = { 
+            fps: 20, 
+            qrbox: { width: 300, height: 150 },
+            aspectRatio: 1.0
+        };
+
+        // Nastavení pouze pro EAN-13 a EAN-8 pro vyšší rychlost
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config, 
+            onScanSuccess
+        ).catch(err => console.error(err));
+    </script>
+    """,
+    height=320,
+)
+
+# Textové pole, kam čtečka "vysype" výsledek
+search_query = st.text_input("🔍 Vyhledat nebo výsledek skenu:", key="search_input").lower()
+
+# --- ZÁLOŽKY ---
+t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import z webu", "📝 Ruční zápis"])
 
 with t3:
-    st.subheader("BOD 3: Našeptávač")
-    # Tady začneš psát a ono ti to samo nabízí zboží z tvé historie
-    naseptavac = st.selectbox("Hledej zboží (kód nebo název):", [""] + sorted(st.session_state.db))
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        kod_input = st.text_input("Kód", value=vytahni_kod(naseptavac) if naseptavac else "")
-    with col2:
-        nazev_input = st.text_input("Název", value=naseptavac.replace(vytahni_kod(naseptavac) or "", "").strip() if naseptavac else "")
-    
-    if st.button("Uložit do regálů"):
-        if kod_input and nazev_input:
-            st.session_state.db = uloz_data([f"{kod_input} {nazev_input}"])
+    naseptavac = st.selectbox("Našeptávač zboží:", [""] + sorted(st.session_state.db))
+    c1, c2 = st.columns(2)
+    with c1:
+        k_in = st.text_input("Kód", value=vytahni_kod(naseptavac) if naseptavac else "")
+    with c2:
+        n_in = st.text_input("Název", value=naseptavac.replace(vytahni_kod(naseptavac) or "", "").strip() if naseptavac else "")
+    if st.button("Uložit do skladu"):
+        if k_in and n_in:
+            st.session_state.db = uloz_data([f"{k_in} {n_in}"])
             st.rerun()
 
-# --- HLAVNÍ FILTR (BOD 2: ČTEČKA) ---
-st.divider()
-search_query = st.text_input("🔍 KLIKNI SEM PRO SKENOVÁNÍ (Čtečka telefonu):", placeholder="Zde pípni kód nebo piš...", help="Pokud máš v mobilu zapnutou čtečku v prohlížeči, stačí kliknout sem.").lower()
-
+# --- REGÁLY ---
 l, r = st.columns([1, 1])
 vybrane = []
 
@@ -131,7 +141,7 @@ with r:
             <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT PRO ZZN</button>
             <script>
             document.getElementById('copyBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno do schránky!'));
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
             }});
             </script>
         """, height=70)
