@@ -8,22 +8,23 @@ import streamlit.components.v1 as components
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD ZZN 2026", layout="wide")
 
-# --- STYLE A BARVY ---
+# --- STYLE - NOVÝ DECENTNÍ DESIGN ---
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
     .logo-link-container { display: flex; justify-content: center; padding: 10px 0px; }
     
+    /* Kontejner položky v regálu */
     .row-container {
         display: flex;
         align-items: center;
-        border-radius: 10px;
-        margin-bottom: 8px;
-        background: #161b22;
+        border-radius: 8px;
+        margin-bottom: 6px;
+        background: #1c2128;
         border: 1px solid #30363d;
         overflow: hidden;
     }
-    .color-strip { width: 15px; align-self: stretch; }
+    .color-strip { width: 10px; align-self: stretch; }
     
     /* Barvy kategorií */
     .cat-blue { background-color: #0072FF; }
@@ -31,17 +32,23 @@ st.markdown("""
     .cat-green { background-color: #28a745; }
     .cat-red { background-color: #f85149; }
     .cat-orange { background-color: #ff9f43; }
-    .cat-default { background-color: #30363d; }
+    .cat-default { background-color: #444c56; }
 
-    /* Stylování červeného tlačítka skeneru */
+    /* Stylování tlačítek - ŠEDO-MODRÁ místo ČERVENÉ */
     div.stButton > button:first-child {
-        background: linear-gradient(90deg, #f85149, #d73a49) !important;
-        color: white !important;
-        height: 3.5em;
+        background-color: #30363d !important;
+        color: #adbac7 !important;
+        border: 1px solid #444c56 !important;
+        height: 3em;
         width: 100%;
-        font-weight: bold !important;
-        border-radius: 12px !important;
-        border: none !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        transition: 0.3s;
+    }
+    div.stButton > button:first-child:hover {
+        border-color: #58a6ff !important;
+        color: #58a6ff !important;
+        background-color: #30363d !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -49,10 +56,13 @@ st.markdown("""
 # LOGO
 if os.path.exists("logo_zzn.png"):
     repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
-    st.markdown(f'<div class="logo-link-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" width="350"></a></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="logo-link-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" width="300"></a></div>', unsafe_allow_html=True)
 
-# --- DATABÁZE ---
+# --- DATABÁZE A SEZNAM ---
 DB_FILE = "sklad_databaze.csv"
+
+if 'vybrane_polozky' not in st.session_state:
+    st.session_state.vybrane_polozky = []
 
 def nacti_data():
     if os.path.exists(DB_FILE):
@@ -86,14 +96,16 @@ def skenovat():
     """, height=350)
 
 # --- HLAVNÍ OVLÁDÁNÍ ---
-if st.button("📸 SKENOVAT ČÁROVÝ KÓD"):
-    skenovat()
+col_scan, _ = st.columns([1, 1])
+with col_scan:
+    if st.button("📸 SPUSTIT SKENER"):
+        skenovat()
 
 # NASEPTAVAC VE VYHLEDAVANI
-search_query = st.selectbox("🔍 Vyhledat nebo vybrat z databáze:", [""] + st.session_state.db, index=0).lower()
+search_query = st.selectbox("🔍 Hledat v databázi (napiš název nebo kód):", [""] + st.session_state.db, index=0).lower()
 
 # --- ZÁLOŽKY ---
-t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční přidání"])
+t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
@@ -105,22 +117,22 @@ with t1:
             st.rerun()
 
 with t2:
-    web = st.text_area("Vlož text z webu...")
-    if st.button("Importovat web"):
+    web = st.text_area("Vložit text z webu...")
+    if st.button("Importovat text"):
         if web:
             uloz_data([r.strip() for r in web.split('\n') if len(r) > 3])
             st.rerun()
 
 with t3:
     c1, c2 = st.columns(2)
-    k = c1.text_input("Kód (ručně)")
-    n = c2.text_input("Název (ručně)")
-    if st.button("Přidat do databáze"):
+    k = c1.text_input("Kód zboží")
+    n = c2.text_input("Název zboží")
+    if st.button("Přidat do regálů"):
         if k and n:
             uloz_data([f"{k} {n}"])
             st.rerun()
 
-# --- VÝPIS A KOPÍROVÁNÍ ---
+# --- REGÁLY A SEZNAM ---
 st.divider()
 
 def urcit_barvu(text):
@@ -133,7 +145,6 @@ def urcit_barvu(text):
     return "cat-default"
 
 l, r = st.columns(2)
-vybrane = []
 
 with l:
     st.subheader("📦 REGÁLY")
@@ -141,27 +152,41 @@ with l:
     for i, p in enumerate(vyfiltrovano):
         barva = urcit_barvu(p)
         st.markdown(f'<div class="row-container"><div class="color-strip {barva}"></div>', unsafe_allow_html=True)
+        # Pokud uživatel klikne, přidáme do seznamu (pokud tam už není)
         if st.checkbox(p, key=f"p_{st.session_state.reset_key}_{i}"):
-            vybrane.append(re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', p).strip())
+            cista = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', p).strip()
+            if cista not in st.session_state.vybrane_polozky:
+                st.session_state.vybrane_polozky.append(cista)
         st.markdown('</div>', unsafe_allow_html=True)
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    if vybrane:
-        vysledek_text = "\n".join(vybrane)
-        st.text_area("Seznam:", value=vysledek_text, height=250)
-        
-        # TLAČÍTKO PRO KOPÍROVÁNÍ
-        vysledek_js = "\\n".join(vybrane)
+    
+    # Výpis položek s možností mazání
+    smazat_index = -1
+    for idx, pol in enumerate(st.session_state.vybrane_polozky):
+        c_pol, c_del = st.columns([0.85, 0.15])
+        c_pol.write(f"• {pol}")
+        if c_del.button("❌", key=f"del_{idx}"):
+            smazat_index = idx
+    
+    if smazat_index != -1:
+        st.session_state.vybrane_polozky.pop(smazat_index)
+        st.rerun()
+
+    if st.session_state.vybrane_polozky:
+        st.divider()
+        vysledek_js = "\\n".join(st.session_state.vybrane_polozky)
         st.components.v1.html(f"""
-            <button id="cpBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT PRO ZZN</button>
+            <button id="cpBtn" style="width:100%; background:linear-gradient(90deg, #1f6feb, #58a6ff); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
             <script>
             document.getElementById('cpBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno do schránky!'));
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
             }});
             </script>
         """, height=70)
         
-        if st.button("🗑️ VYMAZAT VÝBĚR"):
+        if st.button("🗑️ SMAZAT CELÝ SEZNAM"):
+            st.session_state.vybrane_polozky = []
             st.session_state.reset_key += 1
             st.rerun()
