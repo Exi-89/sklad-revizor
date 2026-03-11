@@ -33,17 +33,26 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("⚡ SKLAD")
+st.title("⚡ SKLAD REVIZOR PRO")
 
 # --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
 
 def nacti_data():
-    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)['polozka'].tolist()
-    return []
+    if os.path.exists(DB_FILE): 
+        return pd.read_csv(DB_FILE)['polozka'].tolist()
+    # POKUD SOUBOR NEEXISTUJE, VRÁTÍME DEMO DATA
+    return [
+        "50011210 Hrábě švédské drát.pevné | 6,000 ks",
+        "50210086 Hrábě provzduš. oboustranné | 4,000 ks",
+        "49050470 Kolík sázecí kovový Profi | 5,000 ks",
+        "36030009 Šňůra PP 4mm barevná | 200,000 m",
+        "50100425 Drtič kostí pákový 50cm | 1,000 ks"
+    ]
 
 def uloz_data(nove):
     aktualni = nacti_data()
+    # Pokud jsou tam demo data (nemají kód na začátku v CSV), pandas to přebere
     sjednoceno = sorted(list(set(aktualni + nove)))
     pd.DataFrame({'polozka': sjednoceno}).to_csv(DB_FILE, index=False)
     return sjednoceno
@@ -52,7 +61,7 @@ if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'kosik' not in st.session_state: st.session_state.kosik = []
 
 # --- NAHRÁVÁNÍ ---
-with st.expander("➕ PŘIDAT NOVÉ PDF"):
+with st.expander("➕ PŘIDAT NOVÉ PDF DO SEZNAMU"):
     up = st.file_uploader("Nahraj převodku", type="pdf")
     if up:
         reader = pypdf.PdfReader(up)
@@ -63,56 +72,67 @@ with st.expander("➕ PŘIDAT NOVÉ PDF"):
                     texty.append(r.strip().split("stav na skladě")[0])
         if texty:
             st.session_state.db = uloz_data(texty)
-            st.success(f"Nahráno {len(texty)} položek!")
+            st.success(f"Nahráno {len(texty)} nových položek!")
+            st.rerun()
 
 # --- HLAVNÍ PLOCHA ---
 l, r = st.columns([1, 1])
 
 with l:
-    st.subheader("📦 ZBOŽÍ")
+    st.subheader("📦 REGÁLY (Zaškrtni co dochází)")
     for i, pol in enumerate(st.session_state.db):
-        if st.checkbox(pol, key=f"c_{i}"):
-            if pol not in st.session_state.kosik: st.session_state.kosik.append(pol)
+        # Unikátní klíč pro každý checkbox
+        if st.checkbox(pol, key=f"c_{i}_{pol[:5]}"):
+            if pol not in st.session_state.kosik: 
+                st.session_state.kosik.append(pol)
         else:
-            if pol in st.session_state.kosik: st.session_state.kosik.remove(pol)
+            if pol in st.session_state.kosik: 
+                st.session_state.kosik.remove(pol)
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
     if st.session_state.kosik:
-        vysledek = "\\n".join(st.session_state.kosik)
+        # Příprava textu pro JavaScript (výměna konců řádků za \n)
+        vysledek_pro_js = "\\n".join(st.session_state.kosik)
+        vysledek_pro_box = "\n".join(st.session_state.kosik)
         
-        # Zobrazení seznamu
-        st.text_area("Položky:", value="\n".join(st.session_state.kosik), height=250)
+        st.text_area("Vybrané položky:", value=vysledek_pro_box, height=250)
         
-        # --- TLAČÍTKO PRO KOPÍROVÁNÍ (Magie s JS) ---
+        # TLAČÍTKO PRO KOPÍROVÁNÍ
         html_button = f"""
             <button id="copyBtn" style="
                 width: 100%;
-                background-color: #0072FF;
+                background: linear-gradient(90deg, #0072FF, #00C6FF);
                 color: white;
-                padding: 15px;
+                padding: 20px;
                 border: none;
-                border-radius: 10px;
-                font-size: 18px;
+                border-radius: 15px;
+                font-size: 20px;
                 font-weight: bold;
                 cursor: pointer;
-            ">📋 KOPÍROVAT VŠE</button>
+                box-shadow: 0 4px 15px rgba(0,114,255,0.4);
+            ">📋 KOPÍROVAT SEZNAM</button>
 
             <script>
             document.getElementById('copyBtn').addEventListener('click', function() {{
-                const textToCopy = `{vysledek}`;
+                const textToCopy = `{vysledek_pro_js}`;
                 navigator.clipboard.writeText(textToCopy).then(() => {{
-                    alert('Zkopírováno do schránky!');
+                    alert('Zkopírováno! Teď to vlož do zprávy.');
                 }}).catch(err => {{
-                    console.error('Chyba při kopírování: ', err);
+                    alert('Chyba při kopírování. Zkus to ručně.');
                 }});
             }});
             </script>
         """
-        st.components.v1.html(html_button, height=80)
+        st.components.v1.html(html_button, height=100)
 
-        if st.button("🗑️ VYMAZAT VÝBĚR"):
+        if st.button("🗑️ VYMAZAT VÝBĚR (Kosík)"):
             st.session_state.kosik = []
             st.rerun()
     else:
-        st.info("Označ vlevo, co chybí.")
+        st.info("Zatím jsi nic nevybral. Klikni na položky vlevo.")
+
+if st.sidebar.button("⚠️ Smazat databázi a vrátit Demo"):
+    if os.path.exists(DB_FILE): os.remove(DB_FILE)
+    st.session_state.db = nacti_data()
+    st.rerun()
