@@ -3,130 +3,116 @@ import pypdf
 import re
 import pandas as pd
 import os
-from streamlit_extras.stylable_container import stylable_container
 
 # Nastavení stránky
-st.set_page_config(page_title="SKLAD PRO | Databáze", page_icon="📦", layout="wide")
+st.set_page_config(page_title="SKLAD PRO 2026", page_icon="⚡", layout="wide")
 
 # EXTRÉMNÍ DESIGN (CSS)
 st.markdown("""
     <style>
+    .main { background-color: #0b0e14; }
+    h1 {
+        background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 2.5rem !important;
+        text-align: center;
+    }
     .stCheckbox {
-        background-color: #1e2130;
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 15px !important;
         padding: 20px !important;
-        border-radius: 12px !important;
-        border: 1px solid #3d4455 !important;
         margin-bottom: 10px !important;
     }
     div[data-checked="true"] {
-        background: linear-gradient(145deg, #4b0000, #2a0000) !important;
-        border: 1px solid #ff4b4b !important;
+        background: linear-gradient(145deg, #3d0a0a, #161b22) !important;
+        border: 1px solid #f85149 !important;
     }
     .stCheckbox label p { font-size: 18px !important; color: #E0E0E0 !important; }
-    
-    /* Styl pro kopírovací tlačítko */
-    .copy-btn {
-        background-color: #0072FF;
-        color: white;
-        padding: 10px 20px;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: bold;
-        margin-top: 10px;
-        width: 100%;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIKA PAMĚTI (UKLÁDÁNÍ) ---
-DB_FILE = "moje_zbozi.csv"
+st.title("⚡ SKLAD")
 
-def nacti_databazi():
-    if os.path.exists(DB_FILE):
-        return pd.read_csv(DB_FILE)['polozka'].tolist()
+# --- DATABÁZE ---
+DB_FILE = "sklad_databaze.csv"
+
+def nacti_data():
+    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)['polozka'].tolist()
     return []
 
-def uloz_do_databaze(novy_seznam):
-    stary_seznam = nacti_databazi()
-    # Spojíme oba seznamy a odstraníme duplicity
-    kombinovany = list(set(stary_seznam + novy_seznam))
-    pd.DataFrame({'polozka': kombinovany}).to_csv(DB_FILE, index=False)
-    return kombinovany
+def uloz_data(nove):
+    aktualni = nacti_data()
+    sjednoceno = sorted(list(set(aktualni + nove)))
+    pd.DataFrame({'polozka': sjednoceno}).to_csv(DB_FILE, index=False)
+    return sjednoceno
 
-# Inicializace paměti v aplikaci
-if 'seznam_skladem' not in st.session_state:
-    st.session_state.seznam_skladem = nacti_databazi()
+if 'db' not in st.session_state: st.session_state.db = nacti_data()
+if 'kosik' not in st.session_state: st.session_state.kosik = []
 
-if 'critical_list' not in st.session_state:
-    st.session_state.critical_list = []
+# --- NAHRÁVÁNÍ ---
+with st.expander("➕ PŘIDAT NOVÉ PDF"):
+    up = st.file_uploader("Nahraj převodku", type="pdf")
+    if up:
+        reader = pypdf.PdfReader(up)
+        texty = []
+        for p in reader.pages:
+            for r in p.extract_text().split('\n'):
+                if re.search(r'\d+,\d+\s*(ks|m)', r):
+                    texty.append(r.strip().split("stav na skladě")[0])
+        if texty:
+            st.session_state.db = uloz_data(texty)
+            st.success(f"Nahráno {len(texty)} položek!")
 
-st.title("🛡️ SKLAD PRO REVIZOR + PAMĚŤ")
+# --- HLAVNÍ PLOCHA ---
+l, r = st.columns([1, 1])
 
-# Horní panel pro nahrávání
-uploaded_file = st.file_uploader("📤 NAHRAJ DALŠÍ PDF (Zboží se přidá k existujícímu)", type="pdf")
+with l:
+    st.subheader("📦 ZBOŽÍ")
+    for i, pol in enumerate(st.session_state.db):
+        if st.checkbox(pol, key=f"c_{i}"):
+            if pol not in st.session_state.kosik: st.session_state.kosik.append(pol)
+        else:
+            if pol in st.session_state.kosik: st.session_state.kosik.remove(pol)
 
-def vytahni_zbozi_z_pdf(file):
-    reader = pypdf.PdfReader(file)
-    nalezene = []
-    for page in reader.pages:
-        text = page.extract_text()
-        for radek in text.split('\n'):
-            if re.search(r'\d+,\d+\s*(ks|m)', radek):
-                cisty = radek.strip().split("stav na skladě")[0]
-                nalezene.append(cisty)
-    return nalezene
-
-if uploaded_file is not None:
-    novinky = vytahni_zbozi_z_pdf(uploaded_file)
-    if novinky:
-        st.session_state.seznam_skladem = uloz_do_databaze(novinky)
-        st.success(f"Přidáno {len(novinky)} položek do tvé databáze!")
-
-# Rozdělení plochy
-left_col, right_col = st.columns([1, 1])
-
-with left_col:
-    st.subheader("📦 MOJE DATABÁZE ZBOŽÍ")
-    if st.session_state.seznam_skladem:
-        for i, polozka in enumerate(sorted(st.session_state.seznam_skladem)):
-            if st.checkbox(polozka, key=f"check_{i}"):
-                if polozka not in st.session_state.critical_list:
-                    st.session_state.critical_list.append(polozka)
-            else:
-                if polozka in st.session_state.critical_list:
-                    st.session_state.critical_list.remove(polozka)
-    else:
-        st.info("Databáze je prázdná. Nahraj první PDF převodku.")
-
-with right_col:
-    st.subheader("📋 SEZNAM K OBJEDNÁNÍ")
-    if st.session_state.critical_list:
-        final_text = "\n".join(st.session_state.critical_list)
+with r:
+    st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
+    if st.session_state.kosik:
+        vysledek = "\\n".join(st.session_state.kosik)
         
-        # Textové pole
-        st.text_area("Chybějící zboží:", value=final_text, height=300, id="seznam_text")
+        # Zobrazení seznamu
+        st.text_area("Položky:", value="\n".join(st.session_state.kosik), height=250)
         
-        # SKRYTÝ JAVASCRIPT PRO KOPÍROVÁNÍ
-        copy_code = f"""
-        <button class="copy-btn" onclick="copyToClipboard()">📋 KOPÍROVAT SEZNAM</button>
-        <script>
-        function copyToClipboard() {{
-            const text = `{final_text}`;
-            navigator.clipboard.writeText(text).then(function() {{
-                alert('Zkopírováno do schránky!');
+        # --- TLAČÍTKO PRO KOPÍROVÁNÍ (Magie s JS) ---
+        html_button = f"""
+            <button id="copyBtn" style="
+                width: 100%;
+                background-color: #0072FF;
+                color: white;
+                padding: 15px;
+                border: none;
+                border-radius: 10px;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+            ">📋 KOPÍROVAT VŠE</button>
+
+            <script>
+            document.getElementById('copyBtn').addEventListener('click', function() {{
+                const textToCopy = `{vysledek}`;
+                navigator.clipboard.writeText(textToCopy).then(() => {{
+                    alert('Zkopírováno do schránky!');
+                }}).catch(err => {{
+                    console.error('Chyba při kopírování: ', err);
+                }});
             }});
-        }}
-        </script>
+            </script>
         """
-        st.components.v1.html(copy_code, height=70)
+        st.components.v1.html(html_button, height=80)
 
         if st.button("🗑️ VYMAZAT VÝBĚR"):
-            st.session_state.critical_list = []
+            st.session_state.kosik = []
             st.rerun()
-            
-    if st.button("⚠️ SMAZAT CELOU DATABÁZI (CSV)"):
-        if os.path.exists(DB_FILE):
-            os.remove(DB_FILE)
-            st.session_state.seznam_skladem = []
-            st.rerun()
+    else:
+        st.info("Označ vlevo, co chybí.")
