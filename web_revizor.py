@@ -16,22 +16,28 @@ st.markdown("""
     .logo-img { width: 520px; transition: transform 0.4s ease; cursor: pointer; }
     .logo-img:hover { transform: scale(1.1); filter: brightness(1.2); }
     
+    /* Záložky s barvami */
     button[data-baseweb="tab"] { font-weight: bold !important; font-size: 18px !important; }
-    #tabs-b3-tab-0 { color: #ff4b4b !important; } /* PDF Převodka - Červená */
-    #tabs-b3-tab-1 { color: #0072FF !important; } /* Import - Modrá */
-    #tabs-b3-tab-2 { color: #adbac7 !important; } /* Ruční - Šedá */
+    #tabs-b3-tab-0 { color: #ff4b4b !important; }
+    #tabs-b3-tab-1 { color: #0072FF !important; }
+    #tabs-b3-tab-2 { color: #adbac7 !important; }
 
-    .row-container {
+    /* Vlastní řádek v regálu */
+    .row-item {
         display: flex; align-items: center; border-radius: 8px;
-        margin-bottom: 6px; background: #1c2128; border: 1px solid #30363d; overflow: hidden;
+        margin-bottom: 6px; background: #1c2128; border: 1px solid #30363d;
+        padding: 5px 10px; cursor: pointer;
     }
-    .color-strip { width: 14px; align-self: stretch; }
+    .color-strip { width: 10px; height: 30px; border-radius: 4px; margin-right: 15px; }
     .cat-blue { background-color: #0072FF; }
     .cat-yellow { background-color: #FFD700; }
     .cat-green { background-color: #28a745; }
     .cat-red { background-color: #f85149; }
     .cat-orange { background-color: #ff9f43; }
     .cat-default { background-color: #444c56; }
+    
+    /* Aktivní (vybraný) řádek */
+    .selected-row { border: 2px solid #58a6ff !important; background: #262c36 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,19 +48,19 @@ st.markdown(f'<div class="logo-container"><a href="https://www.zznhp.cz" target=
 # --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
 
-if 'vybrane_polozky' not in st.session_state: st.session_state.vybrane_polozky = set()
+if 'vybrane' not in st.session_state: st.session_state.vybrane = set()
 if 'db' not in st.session_state:
     if os.path.exists(DB_FILE):
         try: st.session_state.db = pd.read_csv(DB_FILE)['polozka'].tolist()
         except: st.session_state.db = ["50011210 Hrábě švédské", "35020060 Hadice 1 m"]
     else: st.session_state.db = ["50011210 Hrábě švédské", "35020060 Hadice 1 m"]
 
-def uloz_data(nove):
+def uloz_do_db(nove):
     st.session_state.db = sorted(list(set(st.session_state.db + nove)))
     pd.DataFrame({'polozka': st.session_state.db}).to_csv(DB_FILE, index=False)
 
 # --- SKENER DIALOG ---
-@st.dialog("📸 SKENOVÁNÍ ČÁROVÉHO KÓDU")
+@st.dialog("📸 SKENOVÁNÍ")
 def skenovat():
     components.html("""
         <script src="https://unpkg.com/html5-qrcode"></script>
@@ -68,38 +74,35 @@ def skenovat():
         </script>
     """, height=350)
 
-# --- SKENER A NAŠEPTÁVAČ ---
+# --- PANEL OVLÁDÁNÍ ---
 col_a, col_b = st.columns([0.3, 0.7])
 with col_a:
-    if st.button("📸 SPUSTIT SKENER", use_container_width=True):
-        skenovat()
-
+    if st.button("📸 SPUSTIT SKENER", use_container_width=True): skenovat()
 with col_b:
-    search_query = st.selectbox("🔍 NAŠEPTÁVAČ (Hledat v regálech):", [""] + st.session_state.db, index=0).lower()
+    search = st.selectbox("🔍 NAŠEPTÁVAČ:", [""] + st.session_state.db, index=0).lower()
 
-# --- ZÁLOŽKY ---
+# --- IMPORTY ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 with t1:
-    up = st.file_uploader("Nahraj PDF", type="pdf")
-    if st.button("Uložit z PDF"):
+    up = st.file_uploader("PDF", type="pdf")
+    if st.button("Uložit PDF"):
         if up:
-            reader = pypdf.PdfReader(up)
-            z_pdf = [r.strip() for p in reader.pages for r in p.extract_text().split('\n') if len(r) > 5]
-            uloz_data(z_pdf); st.rerun()
+            z_pdf = [r.strip() for p in pypdf.PdfReader(up).pages for r in p.extract_text().split('\n') if len(r) > 5]
+            uloz_do_db(z_pdf); st.rerun()
 with t2:
-    web = st.text_area("Vložit text z webu nebo mailu...")
-    if st.button("Importovat text"):
-        if web: uloz_data([r.strip() for r in web.split('\n') if len(r) > 3]); st.rerun()
+    web = st.text_area("Text k importu...")
+    if st.button("Importovat"):
+        if web: uloz_do_db([r.strip() for r in web.split('\n') if len(r) > 3]); st.rerun()
 with t3:
     c1, c2 = st.columns(2)
-    k, n = c1.text_input("Kód zboží"), c2.text_input("Název zboží")
-    if st.button("Přidat do databáze"):
-        if k and n: uloz_data([f"{k} {n}"]); st.rerun()
+    k, n = c1.text_input("Kód"), c2.text_input("Název")
+    if st.button("Přidat"):
+        if k and n: uloz_do_db([f"{k} {n}"]); st.rerun()
 
 st.divider()
 
-# --- REGÁLY A SEZNAM ---
-def urcit_barvu(text):
+# --- LOGIKA KATEGORIÍ ---
+def get_color(text):
     text = text.lower()
     if any(x in text for x in ["hadice", "voda"]): return "cat-blue"
     if any(x in text for x in ["hrábě", "lopat"]): return "cat-yellow"
@@ -112,56 +115,52 @@ l, r = st.columns(2)
 
 with l:
     st.subheader("📦 REGÁLY")
-    vyfiltrovano = [p for p in st.session_state.db if search_query in p.lower()]
+    filtr = [p for p in st.session_state.db if search in p.lower()]
     
-    for i, p in enumerate(vyfiltrovano):
-        barva = urcit_barvu(p)
-        c_line, c_del = st.columns([0.85, 0.15])
-        with c_line:
-            st.markdown(f'<div class="row-container"><div class="color-strip {barva}"></div>', unsafe_allow_html=True)
-            # Checkbox synchronizovaný s vybrane_polozky
-            check_key = f"check_{p}"
-            if st.checkbox(p, key=check_key, value=(p in st.session_state.vybrane_polozky)):
-                st.session_state.vybrane_polozky.add(p)
-            else:
-                st.session_state.vybrane_polozky.discard(p)
-            st.markdown('</div>', unsafe_allow_html=True)
-        with c_del:
+    for p in filtr:
+        color = get_color(p)
+        is_sel = p in st.session_state.vybrane
+        
+        # Místo checkboxu použijeme tlačítko přes celý řádek
+        row_col, del_col = st.columns([0.85, 0.15])
+        
+        with row_col:
+            # Tlačítko se tváří jako řádek
+            label = f"{'✅' if is_sel else '⬜'} {p}"
+            if st.button(label, key=f"row_{p}", use_container_width=True):
+                if is_sel: st.session_state.vybrane.remove(p)
+                else: st.session_state.vybrane.add(p)
+                st.rerun()
+        
+        with del_col:
             if st.button("🗑️", key=f"db_del_{p}"):
                 st.session_state.db.remove(p)
-                st.session_state.vybrane_polozky.discard(p)
+                if p in st.session_state.vybrane: st.session_state.vybrane.remove(p)
                 pd.DataFrame({'polozka': sorted(st.session_state.db)}).to_csv(DB_FILE, index=False)
                 st.rerun()
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    
-    akt_seznam = sorted(list(st.session_state.vybrane_polozky))
-    
-    for p in akt_seznam:
-        col_t, col_b = st.columns([0.88, 0.12])
-        col_t.write(f"• {p}")
-        if col_b.button("❌", key=f"list_del_{p}"):
-            st.session_state.vybrane_polozky.discard(p)
-            if f"check_{p}" in st.session_state:
-                del st.session_state[f"check_{p}"]
+    # Zde je to nejdůležitější: Mazání funguje přímo na setu
+    for p in sorted(list(st.session_state.vybrane)):
+        col_txt, col_btn = st.columns([0.85, 0.15])
+        col_txt.write(f"• {p}")
+        if col_btn.button("❌", key=f"kill_{p}"):
+            st.session_state.vybrane.remove(p)
             st.rerun()
 
-    if st.session_state.vybrane_polozky:
+    if st.session_state.vybrane:
         st.divider()
-        vysledek_js = "\\n".join(akt_seznam)
-        st.components.v1.html(f"""
-            <button id="cpBtn" style="width:100%; background:linear-gradient(90deg, #1f6feb, #58a6ff); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
+        copy_text = "\\n".join(sorted(list(st.session_state.vybrane)))
+        components.html(f"""
+            <button id="cBtn" style="width:100%; background:#1f6feb; color:white; padding:15px; border:none; border-radius:10px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
             <script>
-            document.getElementById('cpBtn').addEventListener('click', function() {{
-                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Seznam zkopírován do schránky!'));
-            }});
+            document.getElementById('cBtn').onclick = () => {{
+                navigator.clipboard.writeText(`{copy_text}`).then(() => alert('Zkopírováno!'));
+            }};
             </script>
         """, height=70)
         
-        if st.button("🗑️ VYMAZAT CELÝ SEZNAM", use_container_width=True):
-            for p in list(st.session_state.vybrane_polozky):
-                if f"check_{p}" in st.session_state:
-                    del st.session_state[f"check_{p}"]
-            st.session_state.vybrane_polozky.clear()
+        if st.button("🗑️ VYMAZAT VŠE", use_container_width=True):
+            st.session_state.vybrane.clear()
             st.rerun()
