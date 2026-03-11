@@ -126,7 +126,7 @@ l, r = st.columns([1, 1])
 vybrane = []
 
 with l:
-    st.subheader("📦 REGÁLY SIBL")
+    st.subheader("📦 Položka")
     filtered_db = [p for p in st.session_state.db if search_query in p.lower()]
     for i, pol in enumerate(filtered_db):
         cista = ocisti_pro_objednavku(pol)
@@ -149,3 +149,4 @@ with r:
         if st.button("🗑️ VYMAZAT VÝBĚR"):
             st.session_state.reset_key += 1
             st.rerun()
+
