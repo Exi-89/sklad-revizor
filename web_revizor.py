@@ -33,26 +33,32 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("⚡ SKLAD")
+st.title("⚡ SKLAD REVIZOR PRO")
 
 # --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
 
+def ocisti_pro_objednavku(text):
+    """Odstraní množství (ks, m) a svislíky, ponechá jen kód a název."""
+    # Odstraní vše od čárky s číslem (množství) až do konce řádku
+    text = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', text)
+    # Odstraní svislíky
+    text = text.replace('|', '').strip()
+    return text
+
 def nacti_data():
     if os.path.exists(DB_FILE): 
         return pd.read_csv(DB_FILE)['polozka'].tolist()
-    # POKUD SOUBOR NEEXISTUJE, VRÁTÍME DEMO DATA
     return [
-        "50011210 Hrábě švédské drát.pevné | 6,000 ks",
-        "50210086 Hrábě provzduš. oboustranné | 4,000 ks",
-        "49050470 Kolík sázecí kovový Profi | 5,000 ks",
-        "36030009 Šňůra PP 4mm barevná | 200,000 m",
-        "50100425 Drtič kostí pákový 50cm | 1,000 ks"
+        "50011210 Hrábě švédské drát.pevné 6,000 ks",
+        "50210086 Hrábě provzduš. oboustranné 4,000 ks",
+        "49050470 Kolík sázecí kovový Profi 5,000 ks",
+        "36030009 Šňůra PP 4mm barevná 200,000 m",
+        "50100425 Drtič kostí pákový 50cm 1,000 ks"
     ]
 
 def uloz_data(nove):
     aktualni = nacti_data()
-    # Pokud jsou tam demo data (nemají kód na začátku v CSV), pandas to přebere
     sjednoceno = sorted(list(set(aktualni + nove)))
     pd.DataFrame({'polozka': sjednoceno}).to_csv(DB_FILE, index=False)
     return sjednoceno
@@ -79,24 +85,25 @@ with st.expander("➕ PŘIDAT NOVÉ PDF DO SEZNAMU"):
 l, r = st.columns([1, 1])
 
 with l:
-    st.subheader("📦 POLOŽKA (Zaškrtni co dochází)")
+    st.subheader("📦 REGÁLY (Zaškrtni co dochází)")
     for i, pol in enumerate(st.session_state.db):
-        # Unikátní klíč pro každý checkbox
         if st.checkbox(pol, key=f"c_{i}_{pol[:5]}"):
-            if pol not in st.session_state.kosik: 
-                st.session_state.kosik.append(pol)
+            # Do košíku uložíme už očištěný text
+            cista_polozka = ocisti_pro_objednavku(pol)
+            if cista_polozka not in st.session_state.kosik: 
+                st.session_state.kosik.append(cista_polozka)
         else:
-            if pol in st.session_state.kosik: 
-                st.session_state.kosik.remove(pol)
+            cista_polozka = ocisti_pro_objednavku(pol)
+            if cista_polozka in st.session_state.kosik: 
+                st.session_state.kosik.remove(cista_polozka)
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
     if st.session_state.kosik:
-        # Příprava textu pro JavaScript (výměna konců řádků za \n)
         vysledek_pro_js = "\\n".join(st.session_state.kosik)
         vysledek_pro_box = "\n".join(st.session_state.kosik)
         
-        st.text_area("Vybrané položky:", value=vysledek_pro_box, height=250)
+        st.text_area("Vybrané zboží:", value=vysledek_pro_box, height=300)
         
         # TLAČÍTKO PRO KOPÍROVÁNÍ
         html_button = f"""
@@ -111,29 +118,28 @@ with r:
                 font-weight: bold;
                 cursor: pointer;
                 box-shadow: 0 4px 15px rgba(0,114,255,0.4);
-            ">📋 KOPÍROVAT SEZNAM</button>
+            ">📋 KOPÍROVAT ČISTÝ SEZNAM</button>
 
             <script>
             document.getElementById('copyBtn').addEventListener('click', function() {{
                 const textToCopy = `{vysledek_pro_js}`;
                 navigator.clipboard.writeText(textToCopy).then(() => {{
-                    alert('Zkopírováno! Teď to vlož do zprávy.');
+                    alert('Zkopírováno bez kusů!');
                 }}).catch(err => {{
-                    alert('Chyba při kopírování. Zkus to ručně.');
+                    alert('Chyba při kopírování.');
                 }});
             }});
             </script>
         """
         st.components.v1.html(html_button, height=100)
 
-        if st.button("🗑️ VYMAZAT VÝBĚR (Kosík)"):
+        if st.button("🗑️ VYMAZAT VÝBĚR"):
             st.session_state.kosik = []
             st.rerun()
     else:
-        st.info("Zatím jsi nic nevybral. Klikni na položky vlevo.")
+        st.info("Seznam je prázdný.")
 
-if st.sidebar.button("⚠️ Smazat databázi a vrátit Demo"):
+if st.sidebar.button("⚠️ Resetovat databázi"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.session_state.db = nacti_data()
     st.rerun()
-
