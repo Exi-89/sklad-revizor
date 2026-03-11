@@ -13,28 +13,28 @@ st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
     
-    /* Logo s efektem zvětšení */
+    /* Větší interaktivní logo */
     .logo-container { display: flex; justify-content: center; padding: 25px 0px; }
     .logo-img {
-        width: 500px; 
-        transition: transform 0.3s ease, filter 0.3s ease;
+        width: 520px; 
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         cursor: pointer;
     }
-    .logo-img:hover { transform: scale(1.08); filter: brightness(1.2); }
+    .logo-img:hover { transform: scale(1.1); filter: brightness(1.2); }
     
-    /* Barevné záložky (Tabs) */
-    button[data-baseweb="tab"] { font-weight: bold !important; }
-    #tabs-b3-tab-0 { color: #f85149 !important; } /* PDF - Červená */
-    #tabs-b3-tab-1 { color: #58a6ff !important; } /* Import - Modrá */
-    #tabs-b3-tab-2 { color: #adbac7 !important; } /* Ruční - Šedá */
+    /* Barevné záložky */
+    button[data-baseweb="tab"] { font-weight: bold !important; font-size: 18px !important; }
+    #tabs-b3-tab-0 { color: #ff4b4b !important; } /* PDF */
+    #tabs-b3-tab-1 { color: #0072FF !important; } /* Import */
+    #tabs-b3-tab-2 { color: #adbac7 !important; } /* Ruční */
 
     .row-container {
         display: flex; align-items: center; border-radius: 8px;
         margin-bottom: 6px; background: #1c2128; border: 1px solid #30363d; overflow: hidden;
     }
-    .color-strip { width: 12px; align-self: stretch; }
+    .color-strip { width: 14px; align-self: stretch; }
     
-    /* Barvy kategorií v regálech */
+    /* Barvy kategorií */
     .cat-blue { background-color: #0072FF; }
     .cat-yellow { background-color: #FFD700; }
     .cat-green { background-color: #28a745; }
@@ -46,6 +46,7 @@ st.markdown("""
     div.stButton > button {
         background-color: #30363d !important; color: #adbac7 !important;
         border: 1px solid #444c56 !important; border-radius: 8px !important;
+        transition: 0.2s;
     }
     div.stButton > button:hover { border-color: #58a6ff !important; color: #58a6ff !important; }
     </style>
@@ -58,8 +59,9 @@ st.markdown(f'<div class="logo-container"><a href="https://www.zznhp.cz" target=
 # --- LOGIKA DAT ---
 DB_FILE = "sklad_databaze.csv"
 
+# Inicializace stavů
 if 'vybrane_polozky' not in st.session_state: st.session_state.vybrane_polozky = []
-if 'list_key' not in st.session_state: st.session_state.list_key = 0
+if 'list_id' not in st.session_state: st.session_state.list_id = 0
 
 def nacti_data():
     if os.path.exists(DB_FILE):
@@ -91,28 +93,28 @@ def skenovat():
         </script>
     """, height=350)
 
-# --- OVLÁDÁNÍ ---
+# --- HLAVNÍ OVLÁDÁNÍ ---
 if st.button("📸 SPUSTIT SKENER"): skenovat()
 
-search_query = st.selectbox("🔍 Hledat v regálech / Našeptávač:", [""] + st.session_state.db, index=0).lower()
+search_query = st.selectbox("🔍 Našeptávač (hledej v regálech):", [""] + st.session_state.db, index=0).lower()
 
-# --- BAREVNÉ ZÁLOŽKY ---
+# --- ZÁLOŽKY ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
-    if st.button("Uložit z PDF", key="btn_pdf"):
+    if st.button("Uložit z PDF"):
         if up:
             reader = pypdf.PdfReader(up)
             z_pdf = [r.strip() for p in reader.pages for r in p.extract_text().split('\n') if len(r) > 5]
             uloz_data(z_pdf); st.rerun()
 with t2:
-    web = st.text_area("Vložit text z webu...", key="area_web")
-    if st.button("Importovat text", key="btn_web"):
+    web = st.text_area("Vložit text z webu...")
+    if st.button("Importovat text"):
         if web: uloz_data([r.strip() for r in web.split('\n') if len(r) > 3]); st.rerun()
 with t3:
     c1, c2 = st.columns(2)
     k, n = c1.text_input("Kód"), c2.text_input("Název")
-    if st.button("Přidat zboží", key="btn_manual"):
+    if st.button("Přidat zboží"):
         if k and n: uloz_data([f"{k} {n}"]); st.rerun()
 
 # --- VÝPIS ---
@@ -137,11 +139,11 @@ with l:
         c_line, c_del = st.columns([0.85, 0.15])
         with c_line:
             st.markdown(f'<div class="row-container"><div class="color-strip {barva}"></div>', unsafe_allow_html=True)
-            if st.checkbox(p, key=f"cb_{st.session_state.reset_key}_{i}"):
+            if st.checkbox(p, key=f"regal_{st.session_state.reset_key}_{i}"):
                 cista = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', p).strip()
                 if cista not in st.session_state.vybrane_polozky:
                     st.session_state.vybrane_polozky.append(cista)
-                    st.session_state.list_key += 1 # Změna klíče pro vynucení refreshu
+                    st.session_state.list_id += 1 # Refresh pro seznam
             st.markdown('</div>', unsafe_allow_html=True)
         with c_del:
             if st.button("🗑️", key=f"db_del_{i}"):
@@ -151,13 +153,16 @@ with l:
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    # Logika mazání se zvýšenou stabilitou
-    for idx, pol in enumerate(list(st.session_state.vybrane_polozky)):
-        col_txt, col_btn = st.columns([0.85, 0.15])
+    
+    # NOVÁ STABILNÍ LOGIKA MAZÁNÍ
+    temp_seznam = list(st.session_state.vybrane_polozky)
+    for idx, pol in enumerate(temp_seznam):
+        col_txt, col_btn = st.columns([0.88, 0.12])
         col_txt.write(f"• {pol}")
-        if col_btn.button("❌", key=f"del_{st.session_state.list_key}_{idx}"):
+        # Klíč obsahuje 'list_id', takže se při smazání všechna tlačítka přegenerují
+        if col_btn.button("❌", key=f"del_{st.session_state.list_id}_{idx}"):
             st.session_state.vybrane_polozky.remove(pol)
-            st.session_state.list_key += 1
+            st.session_state.list_id += 1 # Tohle je klíč k opravě posouvání
             st.rerun()
 
     if st.session_state.vybrane_polozky:
@@ -175,4 +180,5 @@ with r:
         if st.button("🗑️ VYMAZAT VŠE"):
             st.session_state.vybrane_polozky = []
             st.session_state.reset_key += 1
+            st.session_state.list_id += 1
             st.rerun()
