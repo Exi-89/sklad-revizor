@@ -2,24 +2,42 @@ import streamlit as st
 import pypdf
 import re
 
-# Nastavení stránky
-st.set_page_config(page_title="SKLAD | Kritické zásoby", page_icon="⚠️")
+st.set_page_config(page_title="SKLAD | Kritické zásoby", layout="centered")
 
-# VLASTNÍ DESIGN - Červené zvýraznění pro to, co dochází
+# NOVÝ DESIGN - Pořádná tlačítka pro chlapy do skladu
 st.markdown("""
     <style>
-    .stCheckbox { background-color: white; padding: 10px; border-radius: 5px; border: 1px solid #ddd; }
-    .critical-item { color: #d32f2f; font-weight: bold; background-color: #ffebee; padding: 10px; border-radius: 5px; border-left: 5px solid #d32f2f; margin-bottom: 5px; }
+    /* Kontejner pro checkbox - uděláme z něj velkou kartu */
+    .stCheckbox {
+        background-color: #eeeeee;
+        padding: 20px !important;
+        border-radius: 12px !important;
+        border: 2px solid #cccccc !important;
+        margin-bottom: 15px !important;
+        width: 100%;
+    }
+    /* Text uvnitř checkboxu - velký a černý */
+    .stCheckbox label p {
+        font-size: 22px !important;
+        font-weight: bold !important;
+        color: #000000 !important;
+    }
+    /* Barva, když je zaškrtnuto (dochází) - Změní se na červenou */
+    div[data-checked="true"] {
+        background-color: #ff4b4b !important;
+        border-color: #990000 !important;
+    }
+    div[data-checked="true"] label p {
+        color: white !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("⚠️ Skladový Revizor - Kritické zásoby")
+st.title("⚠️ Skladový Revizor")
 
-# Inicializace paměti pro "červený seznam"
 if 'critical_list' not in st.session_state:
     st.session_state.critical_list = []
 
-# Nahrání souboru
 uploaded_file = st.file_uploader("📂 Nahrajte PDF převodku", type="pdf")
 
 def filter_zepo_data(text):
@@ -37,43 +55,30 @@ if uploaded_file is not None:
         vsechno_zbozi.extend(filter_zepo_data(page.extract_text()))
 
     if vsechno_zbozi:
-        st.subheader("Položky k revizi (odškrtni, co dochází):")
-        
+        st.subheader("Klikni na to, co DOCHÁZÍ:")
         for i, polozka in enumerate(vsechno_zbozi):
-            col1, col2 = st.columns([0.8, 0.2])
-            with col1:
-                # Checkbox pro označení, že zboží dochází
-                is_critical = st.checkbox(f"{polozka}", key=f"crit_{i}")
-            
-            if is_critical:
+            # Checkboxy teď vypadají jako velké karty
+            if st.checkbox(polozka, key=f"crit_{i}"):
                 if polozka not in st.session_state.critical_list:
                     st.session_state.critical_list.append(polozka)
             else:
                 if polozka in st.session_state.critical_list:
-                    st.session_state.critical_list.remove(polozka)
-
-        st.markdown("---")
-        
-        # --- SEKCE PRO ODESLÁNÍ ---
-        if st.session_state.critical_list:
-            st.error("🚨 SEZNAM CHYBĚJÍCÍHO ZBOŽÍ:")
-            finalni_text = "\n".join(st.session_state.critical_list)
-            st.text_area("Seznam k odeslání (zkopíruj si):", value=finalni_text, height=150)
-            
-            # Tlačítko pro vyčištění
-            if st.button("🗑️ Vymazat seznam"):
-                st.session_state.critical_list = []
-                st.rerun()
-        else:
-            st.success("Zatím jsi neoznačil nic jako chybějící.")
+                    try: st.session_state.critical_list.remove(polozka)
+                    except: pass
+    
+    st.markdown("---")
+    if st.session_state.critical_list:
+        st.error("🚨 SEZNAM K OBJEDNÁNÍ:")
+        st.text_area("Zkopíruj a pošli:", value="\n".join(st.session_state.critical_list), height=200)
+        if st.button("🗑️ Vymazat vše"):
+            st.session_state.critical_list = []
+            st.rerun()
 
 else:
-    st.info("Nahraj PDF nebo si to zkus na demo datech níže.")
+    # DEMO UKÁZKA
+    st.info("💡 Takhle to bude vypadat (zkus si kliknout):")
     demo = ["50011210 Hrábě 6,000 ks", "36030009 Šňůra 200,000 m", "51060060 Podkladek 20,000 ks"]
     for i, p in enumerate(demo):
         if st.checkbox(p, key=f"demo_{i}"):
             if p not in st.session_state.critical_list:
                 st.session_state.critical_list.append(p)
-    
-    if st.session_state.critical_list:
-        st.text_area("Seznam k odeslání (Demo):", value="\n".join(st.session_state.critical_list))
