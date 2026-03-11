@@ -39,23 +39,22 @@ st.markdown("""
 repo_url = "https://raw.githubusercontent.com/Exi-89/sklad-revizor/main/logo_zzn.png"
 st.markdown(f'<div class="logo-container"><a href="https://www.zznhp.cz" target="_blank"><img src="{repo_url}" class="logo-img"></a></div>', unsafe_allow_html=True)
 
-# --- DATABÁZE ---
+# --- LOGIKA DAT ---
 DB_FILE = "sklad_databaze.csv"
 
-if 'vybrane_polozky' not in st.session_state: st.session_state.vybrane_polozky = []
+# Inicializace stavů
+if 'vybrane_polozky' not in st.session_state: st.session_state.vybrane_polozky = set()
 if 'db' not in st.session_state:
     if os.path.exists(DB_FILE):
         try: st.session_state.db = pd.read_csv(DB_FILE)['polozka'].tolist()
-        except: st.session_state.db = ["50011210 Hrábě švédské", "35020060 Hadice 1 m"]
+        except: st.session_state.db = []
     else: st.session_state.db = ["50011210 Hrábě švédské", "35020060 Hadice 1 m"]
 
 def uloz_data(nove):
     st.session_state.db = sorted(list(set(st.session_state.db + nove)))
     pd.DataFrame({'polozka': st.session_state.db}).to_csv(DB_FILE, index=False)
 
-# --- OVLÁDÁNÍ ---
-search_query = st.selectbox("🔍 Hledat v regálech:", [""] + st.session_state.db, index=0).lower()
-
+# --- ZÁLOŽKY ---
 t1, t2, t3 = st.tabs(["📄 PDF Převodka", "🌐 Import", "📝 Ruční"])
 with t1:
     up = st.file_uploader("Nahraj PDF", type="pdf")
@@ -76,6 +75,9 @@ with t3:
 
 st.divider()
 
+# --- HLAVNÍ ČÁST (REGÁLY A SEZNAM) ---
+search_query = st.text_input("🔍 Rychlé hledání v regálech:", "").lower()
+
 def urcit_barvu(text):
     text = text.lower()
     if any(x in text for x in ["hadice", "voda"]): return "cat-blue"
@@ -90,39 +92,43 @@ l, r = st.columns(2)
 with l:
     st.subheader("📦 REGÁLY")
     vyfiltrovano = [p for p in st.session_state.db if search_query in p.lower()]
+    
     for i, p in enumerate(vyfiltrovano):
         barva = urcit_barvu(p)
         c_line, c_del = st.columns([0.85, 0.15])
         with c_line:
             st.markdown(f'<div class="row-container"><div class="color-strip {barva}"></div>', unsafe_allow_html=True)
-            # KLÍČOVÁ ZMĚNA: Checkbox je svázán se stavem v vybrane_polozky
-            je_vybrano = p in st.session_state.vybrane_polozky
-            if st.checkbox(p, value=je_vybrano, key=f"reg_{p}"):
-                if p not in st.session_state.vybrane_polozky:
-                    st.session_state.vybrane_polozky.append(p)
-                    st.rerun()
-            elif je_vybrano:
-                st.session_state.vybrane_polozky.remove(p)
-                st.rerun()
+            # Klíčová oprava: checkbox přímo upravuje set v session_state
+            if st.checkbox(p, key=f"check_{p}", value=(p in st.session_state.vybrane_polozky)):
+                st.session_state.vybrane_polozky.add(p)
+            else:
+                st.session_state.vybrane_polozky.discard(p)
             st.markdown('</div>', unsafe_allow_html=True)
         with c_del:
             if st.button("🗑️", key=f"db_del_{p}"):
                 st.session_state.db.remove(p)
+                st.session_state.vybrane_polozky.discard(p) # Smazat i z výběru
                 pd.DataFrame({'polozka': sorted(st.session_state.db)}).to_csv(DB_FILE, index=False)
                 st.rerun()
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    for idx, pol in enumerate(st.session_state.vybrane_polozky):
-        col_txt, col_btn = st.columns([0.88, 0.12])
-        col_txt.write(f"• {pol}")
-        if col_btn.button("❌", key=f"list_del_{pol}"):
-            st.session_state.vybrane_polozky.remove(pol)
+    
+    akt_seznam = sorted(list(st.session_state.vybrane_polozky))
+    
+    for p in akt_seznam:
+        col_t, col_b = st.columns([0.85, 0.15])
+        col_t.write(f"• {p}")
+        if col_b.button("❌", key=f"list_del_{p}"):
+            st.session_state.vybrane_polozky.discard(p)
+            # Tady smažeme i stav checkboxu v paměti Streamlitu
+            if f"check_{p}" in st.session_state:
+                del st.session_state[f"check_{p}"]
             st.rerun()
 
     if st.session_state.vybrane_polozky:
         st.divider()
-        vysledek_js = "\\n".join(st.session_state.vybrane_polozky)
+        vysledek_js = "\\n".join(akt_seznam)
         st.components.v1.html(f"""
             <button id="cpBtn" style="width:100%; background:linear-gradient(90deg, #1f6feb, #58a6ff); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
             <script>
@@ -133,5 +139,9 @@ with r:
         """, height=70)
         
         if st.button("🗑️ VYMAZAT VŠE"):
-            st.session_state.vybrane_polozky = []
+            # Totální čistka
+            for p in list(st.session_state.vybrane_polozky):
+                if f"check_{p}" in st.session_state:
+                    del st.session_state[f"check_{p}"]
+            st.session_state.vybrane_polozky.clear()
             st.rerun()
