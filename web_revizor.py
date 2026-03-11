@@ -7,7 +7,7 @@ import os
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD PRO 2026", page_icon="⚡", layout="wide")
 
-# EXTRÉMNÍ DESIGN (CSS)
+# DESIGN
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
@@ -35,11 +35,9 @@ st.markdown("""
 
 st.title("⚡ SKLAD REVIZOR PRO")
 
-# --- DATABÁZE ---
 DB_FILE = "sklad_databaze.csv"
 
 def ocisti_pro_objednavku(text):
-    """Odstraní množství (ks, m) a svislíky, ponechá jen kód a název."""
     text = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', text)
     text = text.replace('|', '').strip()
     return text
@@ -55,18 +53,16 @@ def nacti_data():
         "50100425 Drtič kostí pákový 50cm 1,000 ks"
     ]
 
-def uloz_data(nove):
-    aktualni = nacti_data()
-    sjednoceno = sorted(list(set(aktualni + nove)))
-    pd.DataFrame({'polozka': sjednoceno}).to_csv(DB_FILE, index=False)
-    return sjednoceno
-
 # Inicializace stavů
-if 'db' not in st.session_state: st.session_state.db = nacti_data()
-if 'kosik' not in st.session_state: st.session_state.kosik = []
+if 'db' not in st.session_state:
+    st.session_state.db = nacti_data()
+
+# Klíčová oprava: Resetovací klíč pro checkboxy
+if 'reset_key' not in st.session_state:
+    st.session_state.reset_key = 0
 
 # --- NAHRÁVÁNÍ ---
-with st.expander("➕ PŘIDAT NOVÉ PDF DO SEZNAMU"):
+with st.expander("➕ PŘIDAT NOVÉ PDF"):
     up = st.file_uploader("Nahraj převodku", type="pdf")
     if up:
         reader = pypdf.PdfReader(up)
@@ -76,68 +72,46 @@ with st.expander("➕ PŘIDAT NOVÉ PDF DO SEZNAMU"):
                 if re.search(r'\d+,\d+\s*(ks|m)', r):
                     texty.append(r.strip().split("stav na skladě")[0])
         if texty:
-            st.session_state.db = uloz_data(texty)
-            st.success(f"Nahráno {len(texty)} položek!")
+            aktualni = nacti_data()
+            sjednoceno = sorted(list(set(aktualni + texty)))
+            pd.DataFrame({'polozka': sjednoceno}).to_csv(DB_FILE, index=False)
+            st.session_state.db = sjednoceno
+            st.success("Nahráno!")
             st.rerun()
 
 # --- HLAVNÍ PLOCHA ---
 l, r = st.columns([1, 1])
+vybrane_polozky = []
 
 with l:
-    st.subheader("📦 REGÁLY (Zaškrtni co dochází)")
+    st.subheader("📦 REGÁLY")
+    # Každý checkbox má unikátní klíč, který se při resetu změní
     for i, pol in enumerate(st.session_state.db):
-        # Přidali jsme 'value' parametr, který sleduje, zda je položka v košíku
         cista = ocisti_pro_objednavku(pol)
-        is_checked = st.checkbox(pol, key=f"c_{i}_{pol[:5]}", value=(cista in st.session_state.kosik))
-        
-        if is_checked:
-            if cista not in st.session_state.kosik: 
-                st.session_state.kosik.append(cista)
-                st.rerun()
-        else:
-            if cista in st.session_state.kosik: 
-                st.session_state.kosik.remove(cista)
-                st.rerun()
+        if st.checkbox(pol, key=f"cb_{st.session_state.reset_key}_{i}"):
+            vybrane_polozky.append(cista)
 
 with r:
     st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
-    if st.session_state.kosik:
-        vysledek_pro_js = "\\n".join(st.session_state.kosik)
-        vysledek_pro_box = "\n".join(st.session_state.kosik)
+    if vybrane_polozky:
+        vysledek_text = "\n".join(vybrane_polozky)
+        st.text_area("K objednání:", value=vysledek_text, height=300)
         
-        st.text_area("Vybrané zboží:", value=vysledek_pro_box, height=300)
-        
-        # TLAČÍTKO PRO KOPÍROVÁNÍ
+        # Kopírovací tlačítko
+        vysledek_js = "\\n".join(vybrane_polozky)
         html_button = f"""
-            <button id="copyBtn" style="
-                width: 100%;
-                background: linear-gradient(90deg, #0072FF, #00C6FF);
-                color: white;
-                padding: 20px;
-                border: none;
-                border-radius: 15px;
-                font-size: 20px;
-                font-weight: bold;
-                cursor: pointer;
-                box-shadow: 0 4px 15px rgba(0,114,255,0.4);
-            ">📋 KOPÍROVAT ČISTÝ SEZNAM</button>
-
+            <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:20px; border:none; border-radius:15px; font-size:20px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
             <script>
             document.getElementById('copyBtn').addEventListener('click', function() {{
-                const textToCopy = `{vysledek_pro_js}`;
-                navigator.clipboard.writeText(textToCopy).then(() => {{
-                    alert('Zkopírováno!');
-                }}).catch(err => {{
-                    alert('Chyba při kopírování.');
-                }});
+                navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
             }});
             </script>
         """
         st.components.v1.html(html_button, height=100)
 
-        # OPRAVENÉ MAZÁNÍ - teď to opravdu všechno vyčistí
+        # TOHLE TLAČÍTKO TEĎ BUDE FUNGOVAT
         if st.button("🗑️ VYMAZAT VÝBĚR"):
-            st.session_state.kosik = []
+            st.session_state.reset_key += 1  # Změnou klíče vynutíme odškrtnutí všech checkboxů
             st.rerun()
     else:
         st.info("Seznam je prázdný.")
@@ -145,5 +119,5 @@ with r:
 if st.sidebar.button("⚠️ Resetovat celou databázi"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.session_state.db = nacti_data()
-    st.session_state.kosik = []
+    st.session_state.reset_key += 1
     st.rerun()
