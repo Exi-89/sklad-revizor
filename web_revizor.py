@@ -7,7 +7,7 @@ import os
 # Nastavení stránky
 st.set_page_config(page_title="SKLAD PRO 2026", page_icon="⚡", layout="wide")
 
-# DESIGN
+# DESIGN - Moderní tmavý vzhled
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; }
@@ -39,14 +39,17 @@ st.title("⚡ SKLAD REVIZOR PRO")
 DB_FILE = "sklad_databaze.csv"
 
 def ocisti_pro_objednavku(text):
+    """Odstraní množství a balast pro čistý seznam k objednání."""
     text = re.sub(r',?\s*\d+,\d+\s*(ks|m).*', '', text)
     return text.replace('|', '').strip()
 
 def vytahni_kod(text):
+    """Extrahuje prvních 8 číslic pro kontrolu duplicity."""
     match = re.search(r'(\d{8})', text)
     return match.group(1) if match else text
 
 def nacti_data():
+    """Načte databázi z CSV nebo vrátí demo data."""
     if os.path.exists(DB_FILE): 
         try:
             return pd.read_csv(DB_FILE)['polozka'].tolist()
@@ -55,11 +58,12 @@ def nacti_data():
     return ["50011210 Hrábě švédské drát.pevné", "36030009 Šňůra PP 4mm barevná"]
 
 def uloz_data(nove_polozky):
+    """Uloží nové položky a zajistí unikátnost podle kódu."""
     aktualni = nacti_data()
     existujici_kody = {vytahni_kod(p) for p in aktualni}
     finalni = list(aktualni)
     
-    for n in nove_polozky: # TADY BYLA TA CHYBA - opraveno na 'in'
+    for n in nove_polozky: # Opraveno: 'in' místo 'v'
         kod_novy = vytahni_kod(n)
         if kod_novy not in existujici_kody:
             finalni.append(n)
@@ -68,16 +72,16 @@ def uloz_data(nove_polozky):
     pd.DataFrame({'polozka': sorted(finalni)}).to_csv(DB_FILE, index=False)
     return sorted(finalni)
 
-# Inicializace
+# Inicializace stavu aplikace
 if 'db' not in st.session_state: st.session_state.db = nacti_data()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
-# --- PANEL NAHRÁVÁNÍ A PŘIDÁVÁNÍ ---
+# --- PANEL PRO PŘIDÁVÁNÍ DAT ---
 col_pdf, col_manual = st.columns(2)
 
 with col_pdf:
-    with st.expander("➕ NAHRÁT PDF"):
-        up = st.file_uploader("Vyber převodku", type="pdf")
+    with st.expander("➕ NAHRÁT PDF PŘEVODKU"):
+        up = st.file_uploader("Vyber soubor", type="pdf")
         if up:
             reader = pypdf.PdfReader(up)
             z_pdf = []
@@ -87,22 +91,21 @@ with col_pdf:
                         z_pdf.append(r.strip().split("stav na skladě")[0])
             if z_pdf:
                 st.session_state.db = uloz_data(z_pdf)
-                st.success("PDF zpracováno!")
+                st.success("Databáze aktualizována!")
                 st.rerun()
 
 with col_manual:
-    with st.expander("📝 PŘIDAT RUČNĚ"):
-        m_kod = st.text_input("Kód (8 čísel)", key="manual_kod")
-        m_nazev = st.text_input("Název zboží", key="manual_nazev")
-        if st.button("Uložit do regálu"):
+    with st.expander("📝 PŘIDAT POLOŽKU RUČNĚ"):
+        m_kod = st.text_input("Kód (např. 8 čísel)", key="m_kod")
+        m_nazev = st.text_input("Název zboží", key="m_nazev")
+        if st.button("Uložit"):
             if m_kod and m_nazev:
-                nova = f"{m_kod} {m_nazev}"
-                st.session_state.db = uloz_data([nova])
-                st.success("Uloženo!")
+                st.session_state.db = uloz_data([f"{m_kod} {m_nazev}"])
+                st.success("Přidáno!")
                 st.rerun()
 
-# --- VYHLEDÁVÁNÍ ---
-search_query = st.text_input("🔍 Vyhledat kód nebo název zboží...", "").lower()
+# --- FILTROVÁNÍ A VYHLEDÁVÁNÍ ---
+search_query = st.text_input("🔍 Vyhledat v regálech (kód nebo název)...", "").lower()
 
 # --- HLAVNÍ PLOCHA ---
 l, r = st.columns([1, 1])
@@ -114,32 +117,35 @@ with l:
     
     for i, pol in enumerate(filtered_db):
         cista = ocisti_pro_objednavku(pol)
+        # Checkbox reaguje na reset_key pro hromadné odškrtnutí
         if st.checkbox(pol, key=f"cb_{st.session_state.reset_key}_{i}"):
             vybrane.append(cista)
 
 with r:
-    st.subheader("📝 K OBJEDNÁNÍ")
+    st.subheader("📝 SEZNAM K OBJEDNÁNÍ")
     if vybrane:
         vysledek_text = "\n".join(vybrane)
         st.text_area("Seznam:", value=vysledek_text, height=300)
         
+        # Tlačítko pro kopírování do schránky (JavaScript)
         vysledek_js = "\\n".join(vybrane)
         st.components.v1.html(f"""
-            <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:20px; border:none; border-radius:15px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
+            <button id="copyBtn" style="width:100%; background:linear-gradient(90deg, #0072FF, #00C6FF); color:white; padding:15px; border:none; border-radius:10px; font-size:18px; font-weight:bold; cursor:pointer;">📋 KOPÍROVAT SEZNAM</button>
             <script>
             document.getElementById('copyBtn').addEventListener('click', function() {{
                 navigator.clipboard.writeText(`{vysledek_js}`).then(() => alert('Zkopírováno!'));
             }});
             </script>
-        """, height=100)
+        """, height=70)
 
         if st.button("🗑️ VYMAZAT VÝBĚR"):
             st.session_state.reset_key += 1
             st.rerun()
     else:
-        st.info("Nic nevybráno.")
+        st.info("Regály jsou připraveny. Začni vybírat.")
 
-if st.sidebar.button("⚠️ Resetovat vše"):
+# Boční panel pro správu
+if st.sidebar.button("⚠️ Smazat celou databázi"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.session_state.db = nacti_data()
     st.session_state.reset_key += 1
